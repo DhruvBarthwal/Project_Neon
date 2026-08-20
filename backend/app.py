@@ -11,12 +11,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from nemoguardrails import LLMRails, RailsConfig
+from nemoguardrails.rails.llm.options import GenerationOptions
 from dotenv import load_dotenv
 from agent.planner.prompt import generate_prompt, template
 from google import genai
 from google.genai import types
-from nemoguardrails.rails.llm.options import GenerationOptions
 
+from agent.eventToolBus.event_runner import run_events
+from agent.eventToolBus.event_bus import EventBus
 
 #========= CONNECTION ==========#
 
@@ -92,31 +94,21 @@ def home():
 @app.post("/intent")
 async def getIntent(data : TextRequest):
     
-    print("1. Request received")
-    
     messages = [{
         "role" : "user",
         "content" : data.text
     }]
-    
-    print("2. Sending to Guardrails")
-    
-    t0 = time.time()
-    
+      
     options = GenerationOptions(output_vars=True)
     response = await rails.generate_async(messages=messages,options=options)
     
-    elapsed = time.time() - t0
     
     output_data = response.output_data or {}
     blocked = (
         output_data.get("triggered_input_rail") is not None
         or output_data.get("triggered_output_rail") is not None
     )
-    
-    print("Time:", elapsed)
-    print("3. Response received")
-    
+       
     if blocked:
         return {
                 "is_safe": False,
@@ -124,6 +116,8 @@ async def getIntent(data : TextRequest):
             }
     
     plan = await run_planner(data)
+    
+    runner = run_events(EventBus,plan)
     
     return {
         "is_safe": True,
