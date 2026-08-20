@@ -21,6 +21,7 @@ rails:
   input:
     flows:
       - content safety check input $model=content_safety
+      - self check input
   output:
     flows:
       - content safety check output $model=content_safety
