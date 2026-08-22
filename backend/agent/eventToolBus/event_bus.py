@@ -12,7 +12,7 @@ class EventBus:
         self._subscribers[event_type].append(handler)
     
     async def publish(self, event) -> None:
-        event_type = event.event_type.values
+        event_type = event.event_type.value
         handlers = self._subscribers.get(event_type, [])
         if not handlers:
             logger.warning("no subscribers for: %s", event_type)  

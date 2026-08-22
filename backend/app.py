@@ -13,16 +13,31 @@ from pydantic import BaseModel
 from nemoguardrails import LLMRails, RailsConfig
 from nemoguardrails.rails.llm.options import GenerationOptions
 from dotenv import load_dotenv
-from agent.planner.prompt import generate_prompt, template
 from google import genai
 from google.genai import types
+from contextlib import asynccontextmanager
 
-from agent.eventToolBus.event_runner import run_events
+from agent.eventToolBus.event_runner import run_graph
 from agent.eventToolBus.event_bus import EventBus
-
+from agent.eventToolBus.events import ToolCallRequested, ToolCallCompleted, ToolCallFailed
+from agent.security.agent_identity import issue_agent_identity
+from agent.planner.prompt import generate_prompt, template
+from agent.adapters.mcp_adapter import MCPAdapter
 #========= CONNECTION ==========#
 
-app = FastAPI()
+mcp_adapter = MCPAdapter() 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await mcp_adapter.connect(
+        "salesforce_mcp",
+        command="python",
+        args=["mcp_servers/salesforce_server.py"]
+    )
+    yield
+    await mcp_adapter.close()
+    
+app = FastAPI(lifespan=lifespan)
 
 load_dotenv()
 
@@ -52,6 +67,19 @@ _base.BaseClient.__init__ = _patched_init
 config = RailsConfig.from_path("guardrails/config")
 rails = LLMRails(config)
 
+#=========== EVENT BUS ===========#
+
+bus = EventBus()
+
+async def tool_handler(event: ToolCallRequested):
+    try:
+        result = await mcp_adapter.execute(event.tool, event.mcp_server, event.parameters)
+        await bus.publish(ToolCallCompleted(call_id=event.call_id, result=result))
+    except Exception as e:
+        await bus.publish(ToolCallFailed(call_id=event.call_id, error=str(e))) 
+
+bus.subscribe("tool_call.requested", tool_handler)
+
 #=========== CLASSES =============#
 
 class TextRequest(BaseModel):
@@ -78,7 +106,7 @@ async def run_planner(data: TextRequest) -> dict:
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
             temperature=0.2,
-            response_mime_type="application/json",  # forces valid JSON, no fence-stripping needed
+            response_mime_type="application/json", 
         ),
     )
 
@@ -99,29 +127,32 @@ async def getIntent(data : TextRequest):
         "content" : data.text
     }]
       
-    options = GenerationOptions(output_vars=True)
-    response = await rails.generate_async(messages=messages,options=options)
+    # options = GenerationOptions(output_vars=True)
+    # response = await rails.generate_async(messages=messages,options=options)
+    # print("DEBUG:", response.output_data)
     
-    
-    output_data = response.output_data or {}
-    blocked = (
-        output_data.get("triggered_input_rail") is not None
-        or output_data.get("triggered_output_rail") is not None
-    )
+    # output_data = response.output_data or {}
+    # blocked = (
+    #     output_data.get("triggered_input_rail") is not None
+    #     or output_data.get("triggered_output_rail") is not None
+    # )
        
-    if blocked:
-        return {
-                "is_safe": False,
-                "message" : response.response
-            }
+    # if blocked:
+    #     return {
+    #             "is_safe": False,
+    #             "message" : response.response
+    #         }
+    
+    identity_token = issue_agent_identity(data.user_department, data.user_id, data.convo_id)
     
     plan = await run_planner(data)
     
-    runner = run_events(EventBus,plan)
+    runner = await run_graph(bus,plan, department=data.user_department, identity_token=identity_token)
     
     return {
         "is_safe": True,
-        "plan": plan
+        "plan": plan,
+        "execution_results": runner
     }
     
 

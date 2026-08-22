@@ -8,3 +8,7 @@ pydantic
 nemoguardrails
 
 google-genai
+
+mcp
+pyjwt
+fastmcp
