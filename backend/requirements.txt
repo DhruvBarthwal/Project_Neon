@@ -7,8 +7,10 @@ pydantic
 
 nemoguardrails
 
-google-genai
-
 mcp
 pyjwt
 fastmcp
+
+langgraph
+langchain-google-genai
+langchain-groq

@@ -1,3 +1,5 @@
+import json
+
 from contextlib import AsyncExitStack
 from mcp import ClientSession , StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -25,6 +27,19 @@ class MCPAdapter(ToolAdapter):
         return mcp_server in self._sessions
     
     async def execute(self, tool: str, mcp_server: str, parameters: dict[str, Any]) -> Any:
+        if mcp_server not in self._sessions:
+            return {"error": f"'{mcp_server}' is not connected."}
+
         session = self._sessions[mcp_server]
         result = await session.call_tool(tool, parameters)
+
+        if result.content and result.content[0].type == "text":
+            text = result.content[0].text 
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                return text
+
         return result.content
+    
+mcp_adapter = MCPAdapter()
