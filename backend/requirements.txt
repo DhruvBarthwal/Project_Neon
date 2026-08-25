@@ -12,5 +12,6 @@ pyjwt
 fastmcp
 
 langgraph
-langchain-google-genai
 langchain-groq
+
+psycopg2-binary

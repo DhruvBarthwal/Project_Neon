@@ -17,6 +17,7 @@ from agent.planner.tools_desc import DEPARTMENT_TOOL_PERMISSIONS, MASTER_TOOL_CA
 from agent.graph.tools import ALL_TOOLS
 from agent.planner.prompt import build_system_prompt
 from agent.adapters.mcp_adapter import mcp_adapter
+from .memory import get_relevant_episodes
 
 load_dotenv()
 
@@ -46,7 +47,12 @@ async def agent_node(state: AgentState):
     permitted = {t for entry in DEPARTMENT_TOOL_PERMISSIONS.get(state["department"].lower(), []) for t in entry["tools"]}
     tools_for_llm = [ALL_TOOLS[name] for name in permitted if name in ALL_TOOLS]
     
+    episodes = await get_relevant_episodes(state["user_id"], state["department"], state["message"][-1].content)
+    
     system_prompt = build_system_prompt(state["department"], state["user_role"], state["user_id"], state["convo_id"])
+    
+    if episodes:
+        system_prompt += f"\n\n<relevant_history>\n{chr(10).join(episodes)}\n</relevant_history>" 
     
     system_msg = {
         "role": "system",
