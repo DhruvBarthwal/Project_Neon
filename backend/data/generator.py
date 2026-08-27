@@ -45,15 +45,24 @@ def get_connection():
 # Roughly the distribution discussed: mostly clean, then a
 # deliberately messy tail so the exception list has real substance.
 SCENARIO_WEIGHTS = [
-    ("clean_exact",        0.55),
+    ("clean_exact",        0.57),
     ("fee_delta",          0.15),
     ("settlement_delay",   0.08),
     ("garbled_utr",        0.07),
     ("missing_bank_record",0.06),
     ("missing_gateway_record", 0.03),   # bank has it, gateway doesn't
     ("duplicate_retry",    0.03),
-    ("lump_sum_member",    0.02),       # grouped separately, see below
     ("unresolvable",       0.01),
+    # NOTE: "lump_sum_member" is deliberately NOT in this list. It must
+    # only ever be created by gen_lump_sum_group(), which builds a real
+    # group of payments sharing a UTR with one genuine bank credit
+    # behind them. If it were chosen here by the per-row random draw,
+    # gen_row() would tag a single, isolated row as "lump_sum_member"
+    # with expected_result="match" but no bank record at all (it has
+    # no group to belong to) — an orphaned row that can never actually
+    # match anything. That bug is what caused the lump_sum_member
+    # scenario to score 75% instead of 100% in testing: roughly 2% of
+    # ordinary rows were mislabeled this way and could never resolve.
 ]
 
 FEE_PCT = 0.02        # 2% gateway fee
@@ -140,10 +149,6 @@ def gen_row(i: int, period: str, base_date: datetime):
         bank = (utr, amount, created_at + timedelta(hours=2), "NEFT credit", payment_id)
         # the retry row itself is appended separately by caller
 
-    elif scenario == "lump_sum_member":
-        gateway["expected_result"] = "match"
-        bank = None  # handled in batches by gen_lump_sum_group()
-
     elif scenario == "unresolvable":
         gateway["expected_result"] = "exception"
         bank = None
@@ -212,9 +217,24 @@ def g_period_for(bank_rows, b):
     return CURRENT_PERIOD
 
 
+def clear_period(conn, period: str):
+    """Wipe any existing rows for this period before regenerating it —
+    this is what actually makes 're-run May' overwrite the same slot
+    instead of leaving old rows sitting alongside new ones (which is
+    what caused the duplicate-key error: old and new payment_ids for
+    the same period collided in gateway_records)."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM ledger_matches WHERE period = %s", (period,))
+        cur.execute("DELETE FROM exceptions WHERE period = %s", (period,))
+        cur.execute("DELETE FROM bank_records WHERE period = %s", (period,))
+        cur.execute("DELETE FROM gateway_records WHERE period = %s", (period,))
+    conn.commit()
+
+
 def generate_baseline(conn, total_rows: int, period: str):
     global CURRENT_PERIOD
     CURRENT_PERIOD = period
+    clear_period(conn, period)
     base_date = datetime(int(period.split("-")[0]), int(period.split("-")[1]), 1)
 
     gateway_rows, bank_rows = [], []

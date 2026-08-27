@@ -1,0 +1,114 @@
+import argparse
+import os
+import re
+
+import psycopg2
+import psycopg2.extras
+
+from .matcher import run_matching
+from .constants import FEE_EPSILON,FEE_PCT,GST_PCT,AMOUNT_TOLERANCE, DATE_TOLERANCE_DAYS
+
+#======== Connection ==========#
+
+def get_connection():
+    return psycopg2.connect(
+        host=os.environ.get("PGHOST", "localhost"),
+        port=os.environ.get("PGPORT", "5432"),
+        user=os.environ.get("PGUSER","postgres"),
+        password=os.environ.get("PGPASSWORD",""),
+        dbname=os.environ.get("PDATABASE","finance_controller") 
+    )
+    
+#=========== Convert all UTRs to UPPER CASE ==========#
+    
+def normalize_utr(utr):
+    if not utr:
+        return None
+    return re.sub(r"\s+","",utr).upper()
+
+#============ Fetching gateway and bank rows ===========#
+
+def fetch_period(conn, period):
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """SELECT payment_id, order_id, amount, status, utr, created_at FROM gateway_records WHERE period = %s""",
+            (period,),
+        )
+        gateway_rows = cur.fetchall()
+        
+        cur.execute(
+            """SELECT id, utr, amount, credited_at, narration FROM bank_records WHERE period = %s""",
+            (period,),
+        )
+        bank_rows = cur.fetchall()
+        
+    #======== Normalizing values =========#
+        
+    for g in gateway_rows:
+        g["utr_norm"] = normalize_utr(g["utr"])
+        g["amount"] = round(float(g["amount"]),2)
+    
+    for b in bank_rows:
+        b["utr_norm"] = normalize_utr(b["utr"])
+        b["amount"] = round(float(b["amount"]),2)
+        
+    return gateway_rows, bank_rows
+
+#========== Writing Tables ==============#
+
+def write_results(conn, period, matches, exceptions):
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM ledger_matches WHERE period = %s", (period,))
+        cur.execute("DELETE FROM exceptions WHERE period = %s", (period,))
+        
+        for m in matches:
+            cur.execute(
+                """INSERT INTO ledger_matches (payment_id, period, match_type, matched_amount, bank_amount, risk, explanation)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (m["payment_id"], period, m["match_type"], m["matched_amount"],
+                 m["bank_amount"],m["risk"], m["explanation"]),
+            )
+        for e in exceptions:
+            cur.execute(
+                """INSERT INTO exceptions (payment_id, period, reason_code, reason_detail, recommended_action, risk, amount)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (e["payment_id"], period, e["reason_code"], e["reason_detail"],
+                 e["recommended_action"], e["risk"], e["amount"]),
+            )
+    conn.commit()
+
+def print_summary(period, total, matches, exceptions):
+    n_match = len(matches)
+    n_exc = len(exceptions)
+    by_type = {}
+    for m in matches:
+        by_type[m["match_type"]] = by_type.get(m["match_type"], 0) + 1
+    at_risk = round(sum(e["amount"] or 0 for e in exceptions), 2)
+ 
+    print(f"\n=== Reconciliation summary for {period} ===")
+    print(f"Total gateway records : {total}")
+    print(f"Auto-match rate       : {n_match/total*100:.1f}%  ({n_match}/{total})")
+    print(f"Exception rate        : {n_exc/total*100:.1f}%  ({n_exc}/{total})")
+    print(f"Amount at risk         : ₹{at_risk}")
+    print("Match type breakdown  :", by_type)
+ 
+ 
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--period", type=str, required=True)
+    args = ap.parse_args()
+ 
+    conn = get_connection()
+    try:
+        gateway_rows, bank_rows = fetch_period(conn, args.period)
+        if not gateway_rows:
+            print(f"No gateway records found for period {args.period}. Run the generator first.")
+            raise SystemExit(1)
+ 
+        matches, exceptions = run_matching(gateway_rows, bank_rows)
+        write_results(conn, args.period, matches, exceptions)
+        print_summary(args.period, len(gateway_rows), matches, exceptions)
+    finally:
+        conn.close()
