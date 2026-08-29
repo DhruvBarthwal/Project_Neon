@@ -7,7 +7,7 @@ import nemoguardrails.llm.clients.base as _base
 import time
 import json
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from nemoguardrails import LLMRails, RailsConfig
@@ -21,6 +21,11 @@ from agent.eventToolBus.events import ToolCallRequested, ToolCallCompleted, Tool
 from agent.security.agent_identity import issue_agent_identity, verify_agent_identity
 from agent.adapters.mcp_adapter import mcp_adapter
 from agent.graph.runner import graph
+
+from reconciler.main import get_connection, fetch_period, write_results
+from reconciler.matcher import run_matching
+from reconciler import summary_service
+
 #========= CONNECTION ==========#
 
 @asynccontextmanager
@@ -74,6 +79,9 @@ class TextRequest(BaseModel):
     user_role: str
     user_id: str
     convo_id: str
+    
+class RunReconciliationRequest(BaseModel):
+    period: str
 
 #============ ROUTES =============#
 
@@ -140,6 +148,38 @@ async def getIntent(data : TextRequest):
     return {"is_safe": True, "status": "done", "response": response_text}
 
     
-@app.post("/response")
-def getResponse(data : TextRequest):
-    return {"message" : "Getting Results...."}
+@app.get("/api/reconciliation/periods")
+def get_periods():
+    return summary_service.list_periods()
+
+
+@app.get("/api/reconciliation/summary")
+def get_summary(period: str):
+    conn = get_connection()
+    try:
+        summary = summary_service.build_summary(conn, period)
+    finally:
+        conn.close()
+    
+    if summary is None:
+        raise HTTPException(status_code=404, detail=f"No data for period {period}")
+    return summary
+
+
+@app.post("/api/reconciliation/run")
+def run_reconciliation(req: RunReconciliationRequest):
+    conn = get_connection()
+    try:
+        gateway_rows, bank_rows = fetch_period(conn, req.period)
+        if not gateway_rows:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No gateway records found for period {req.period}. Generate data first.",
+            )    
+        matches, exceptions = run_matching(gateway_rows, bank_rows)
+        write_results(conn, req.period, matches, exceptions)
+        summary = summary_service.build_summary(conn, req.period)
+    finally:
+        conn.close()
+        
+    return summary

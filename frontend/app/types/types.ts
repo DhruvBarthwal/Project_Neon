@@ -1,6 +1,6 @@
 import { Inter_Tight } from "next/font/google"
 
-export type MatchType = "exact" | "fuzzy" | "lump-sum" | "fee_aware"
+export type MatchType = "exact" | "fuzzy" | "lump_sum" | "fee_aware"
 export type RiskLevel = "low" | "medium" | "high"
 
 export interface ReconciliationSummary {
@@ -18,7 +18,7 @@ export interface ReconciliationSummary {
 export interface ExceptionRow {
     paymentId: string
     reasonCode: string
-    reasonLable: string
+    reasonLabel: string
     amount: number
     risk: RiskLevel
 }
