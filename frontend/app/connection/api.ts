@@ -23,3 +23,25 @@ export async function runReconciliation(period: string): Promise<ReconciliationS
   if (!res.ok) throw new Error("Failed to run reconciliation")
   return res.json()
 }
+
+export async function askQuestion(
+  question: string,
+  period: string,
+  convoId: string
+): Promise<string> {
+  const res = await fetch(`${API_BASE}/intent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: question,
+      period,
+      convo_id: convoId,
+      user_department: "finance",
+      user_role: "viewer",
+      user_id: "demo-user",
+    }),
+  })
+  if (!res.ok) throw new Error("Failed to get an answer")
+  const data = await res.json()
+  return data.response as string
+}
