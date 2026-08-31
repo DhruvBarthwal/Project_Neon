@@ -1,21 +1,3 @@
-"""
-Synthetic data generator for the Track 04 reconciliation engine.
-
-Two modes:
-  python generate_data.py --baseline 300 --period 2026-05
-      -> generates one baseline batch (~300 rows) for a period and inserts it
-
-  python generate_data.py --trickle --period 2026-05 --interval 5
-      -> after the baseline exists, periodically inserts 1-2 new rows
-         every `interval` seconds, purely for a "live dashboard" demo effect.
-         This is still 100% synthetic data — just released gradually
-         instead of all at once.
-
-Every gateway row carries a hidden `scenario` + `expected_result` —
-this is the ground truth used later to score the matcher's real
-accuracy. The matcher itself must never read these two columns.
-"""
-
 import argparse
 import os
 import random
@@ -24,16 +6,9 @@ import time
 from datetime import datetime, timedelta
 
 import psycopg2
+from merchant_generator import insert_merchant_rows, generate_merchant_records
 
 def get_connection():
-    """
-    Connect using individual PGHOST/PGPORT/PGUSER/PGPASSWORD/PGDATABASE
-    env vars instead of one combined connection-string. This avoids a
-    common Windows gotcha: if your password contains an '@', ':', or '#'
-    character, a single "postgresql://user:pass@host/db" string gets
-    mis-parsed (the special character breaks the split between the
-    password and the host). Separate variables have no such problem.
-    """
     return psycopg2.connect(
         host=os.environ.get("PGHOST", "localhost"),
         port=os.environ.get("PGPORT", "5432"),
@@ -42,8 +17,6 @@ def get_connection():
         dbname=os.environ.get("PGDATABASE", "finance_controller"),
     )
 
-# Roughly the distribution discussed: mostly clean, then a
-# deliberately messy tail so the exception list has real substance.
 SCENARIO_WEIGHTS = [
     ("clean_exact",        0.57),
     ("fee_delta",          0.15),
@@ -53,16 +26,6 @@ SCENARIO_WEIGHTS = [
     ("missing_gateway_record", 0.03),   # bank has it, gateway doesn't
     ("duplicate_retry",    0.03),
     ("unresolvable",       0.01),
-    # NOTE: "lump_sum_member" is deliberately NOT in this list. It must
-    # only ever be created by gen_lump_sum_group(), which builds a real
-    # group of payments sharing a UTR with one genuine bank credit
-    # behind them. If it were chosen here by the per-row random draw,
-    # gen_row() would tag a single, isolated row as "lump_sum_member"
-    # with expected_result="match" but no bank record at all (it has
-    # no group to belong to) — an orphaned row that can never actually
-    # match anything. That bug is what caused the lump_sum_member
-    # scenario to score 75% instead of 100% in testing: roughly 2% of
-    # ordinary rows were mislabeled this way and could never resolve.
 ]
 
 FEE_PCT = 0.02        # 2% gateway fee
@@ -136,10 +99,6 @@ def gen_row(i: int, period: str, base_date: datetime):
         bank = None
 
     elif scenario == "missing_gateway_record":
-        # bank has a credit with no corresponding gateway row at all.
-        # We still emit a gateway row (so ids stay simple) but mark it
-        # as a row the *matcher* should treat as if it were absent by
-        # giving the bank record an unrelated UTR/amount instead.
         gateway["expected_result"] = "exception"
         bank = (rand_utr(), round(random.uniform(200, 15000), 2),
                  created_at + timedelta(hours=2), "Unmatched inbound credit", None)
@@ -218,14 +177,10 @@ def g_period_for(bank_rows, b):
 
 
 def clear_period(conn, period: str):
-    """Wipe any existing rows for this period before regenerating it —
-    this is what actually makes 're-run May' overwrite the same slot
-    instead of leaving old rows sitting alongside new ones (which is
-    what caused the duplicate-key error: old and new payment_ids for
-    the same period collided in gateway_records)."""
     with conn.cursor() as cur:
         cur.execute("DELETE FROM ledger_matches WHERE period = %s", (period,))
         cur.execute("DELETE FROM exceptions WHERE period = %s", (period,))
+        cur.execute("DELETE FROM merchant_records WHERE period = %s", (period,))  # new
         cur.execute("DELETE FROM bank_records WHERE period = %s", (period,))
         cur.execute("DELETE FROM gateway_records WHERE period = %s", (period,))
     conn.commit()
@@ -283,6 +238,11 @@ def trickle(conn, period: str, interval: int):
         global CURRENT_PERIOD
         CURRENT_PERIOD = period
         insert_rows(conn, gateway_rows, bank_rows)
+        merchant_rows = generate_merchant_records(gateway_rows, period)
+        insert_merchant_rows(conn, merchant_rows)
+ 
+        print(f"Inserted {len(gateway_rows)} gateway rows / {len([b for b in bank_rows if b])} bank rows "
+            f"/ {len(merchant_rows)} merchant rows for {period}")
         print(f"[{datetime.now().isoformat(timespec='seconds')}] +{n} row(s) added to {period}")
 
 

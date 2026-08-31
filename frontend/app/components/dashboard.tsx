@@ -1,34 +1,39 @@
-import React, { useState, useEffect } from "react";
-import Metrics from "./metrics";
-import MatchBreakdown from "./match_breakdown";
-import LumpSumHighlights from "./lump_sum_highlights";
-import ExceptionsTable from "./exceptions_table";
-import { ReconciliationSummary } from "../types/types";
-import { fetchSummary, runReconciliation } from "../connection/api";
+"use client"
+
+import React, { useEffect, useState } from "react"
+import Metrics from "./metrics"
+import MatchBreakdown from "./match_breakdown"
+import LumpSumHighlights from "./lump_sum_highlights"
+import ExceptionsTable from "./exceptions_table"
+import AuditLog from "./audit_log"
+import { ReconciliationSummary } from "../types/types"
+import { fetchSummary, runReconciliation } from "../connection/api"
 
 interface Props {
-  period: string;
+  period: string
 }
 
 const Dashboard = ({ period }: Props) => {
-  const [summary, setSummary] = useState<ReconciliationSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
+  const [summary, setSummary] = useState<ReconciliationSummary | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [running, setRunning] = useState(false)
+  const [runCount, setRunCount] = useState(0)
 
   useEffect(() => {
-    setLoading(true);
+    setLoading(true)
     fetchSummary(period)
       .then(setSummary)
-      .finally(() => setLoading(false));
-  }, [period]);
+      .finally(() => setLoading(false))
+  }, [period])
 
   async function handleRun() {
-    setRunning(true);
+    setRunning(true)
     try {
-      const result = await runReconciliation(period);
-      setSummary(result);
+      const result = await runReconciliation(period)
+      setSummary(result)
+      setRunCount((c) => c + 1)
     } finally {
-      setRunning(false);
+      setRunning(false)
     }
   }
 
@@ -57,10 +62,11 @@ const Dashboard = ({ period }: Props) => {
           <MatchBreakdown summary={summary} />
           <LumpSumHighlights summary={summary} />
           <ExceptionsTable summary={summary} />
+          <AuditLog key={runCount} period={period} />
         </>
       )}
     </div>
-  );
-};
+  )
+}
 
-export default Dashboard;
+export default Dashboard

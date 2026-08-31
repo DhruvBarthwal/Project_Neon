@@ -17,6 +17,8 @@ from reconciler.summary_service import REASON_LABELS
 from .llm import chat, classify
 from .prompts import reason_detail_prompt
 from .states import AgentState
+from reconciler.merchant_crosscheck import cross_check_merchant
+from reconciler.main import fetch_merchant_records
 
 MAX_PARALLEL_WORKERS = 5
 
@@ -45,13 +47,17 @@ def ensure_reconciled_node(state: AgentState) -> dict:
         period = state["period"]
         if not _period_has_data(conn, period):
             return {"auto_run_notice": f"NO_DATA:No reconciliation data exists for {period} at all."}
-
         if _period_already_reconciled(conn, period):
             return {"auto_run_notice": None}
-
+ 
         gateway_rows, bank_rows = fetch_period(conn, period)
         matches, exceptions = run_matching(gateway_rows, bank_rows)
-        write_results(conn, period, matches, exceptions)
+ 
+        matched_payment_ids = {m["payment_id"] for m in matches}
+        merchant_rows = fetch_merchant_records(conn, period)
+        exceptions = cross_check_merchant(gateway_rows, merchant_rows, matched_payment_ids, exceptions)
+ 
+        write_results(conn, period, matches, exceptions, triggered_by="qa_agent", trigger_source="auto_qa")
         return {"auto_run_notice": f"(No reconciliation had been run yet for {period} — ran it now.) "}
     finally:
         conn.close()

@@ -1,21 +1,48 @@
-import { ReconciliationSummary, PeriodStatus } from "../types/types"
+import { ReconciliationSummary, PeriodStatus, AuditRun } from "../types/types"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
+let cachedToken: string | null = null
+
+async function getToken(): Promise<string> {
+  if (cachedToken) return cachedToken
+  const res = await fetch(`${API_BASE}/auth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_id: "demo-user", role: "viewer" }),
+  })
+  if (!res.ok) throw new Error("Failed to get an auth token")
+  const data = await res.json()
+  const token: string = data.token
+  cachedToken = token
+  return token
+}
+
+async function authedFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = await getToken()
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`,
+    },
+  })
+}
+
 export async function fetchPeriods(): Promise<PeriodStatus[]> {
-  const res = await fetch(`${API_BASE}/api/reconciliation/periods`)
+  const res = await authedFetch(`${API_BASE}/api/reconciliation/periods`)
   if (!res.ok) throw new Error("Failed to load periods")
   return res.json()
 }
 
 export async function fetchSummary(period: string): Promise<ReconciliationSummary> {
-  const res = await fetch(`${API_BASE}/api/reconciliation/summary?period=${period}`)
+  const res = await authedFetch(`${API_BASE}/api/reconciliation/summary?period=${period}`)
   if (!res.ok) throw new Error("Failed to load summary")
   return res.json()
 }
 
 export async function runReconciliation(period: string): Promise<ReconciliationSummary> {
-  const res = await fetch(`${API_BASE}/api/reconciliation/run`, {
+  const res = await authedFetch(`${API_BASE}/api/reconciliation/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ period }),
@@ -24,22 +51,24 @@ export async function runReconciliation(period: string): Promise<ReconciliationS
   return res.json()
 }
 
+export async function fetchAuditLog(period?: string): Promise<AuditRun[]> {
+  const url = period
+    ? `${API_BASE}/api/reconciliation/audit?period=${period}`
+    : `${API_BASE}/api/reconciliation/audit`
+  const res = await authedFetch(url)
+  if (!res.ok) throw new Error("Failed to load audit log")
+  return res.json()
+}
+
 export async function askQuestion(
   question: string,
   period: string,
   convoId: string
 ): Promise<string> {
-  const res = await fetch(`${API_BASE}/intent`, {
+  const res = await authedFetch(`${API_BASE}/intent`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text: question,
-      period,
-      convo_id: convoId,
-      user_department: "finance",
-      user_role: "viewer",
-      user_id: "demo-user",
-    }),
+    body: JSON.stringify({ text: question, period, convo_id: convoId }),
   })
   if (!res.ok) throw new Error("Failed to get an answer")
   const data = await res.json()

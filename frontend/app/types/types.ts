@@ -1,5 +1,5 @@
 export type MatchType = "exact" | "fuzzy" | "lump_sum" | "fee_aware"
-export type RiskLevel = "low" | "medium" | "high"
+export type RiskLevel = "low" | "medium" | "high" | "critical"
 
 export interface ReconciliationSummary {
   period: string
@@ -16,7 +16,7 @@ export interface ReconciliationSummary {
 export interface ExceptionRow {
   paymentId: string
   reasonCode: string
-  reasonLabel: string        // human-readable version of reasonCode
+  reasonLabel: string        
   amount: number
   risk: RiskLevel
 }
@@ -38,4 +38,15 @@ export interface PeriodStatus {
 export interface ChatMessage {
   role: "user" | "assistant"
   content: string
+}
+
+export interface AuditRun {
+  period: string
+  triggeredBy: string
+  triggerSource: "manual" | "auto_qa"
+  totalRecords: number
+  matchedCount: number
+  exceptionCount: number
+  matchRate: number
+  runAt: string  
 }

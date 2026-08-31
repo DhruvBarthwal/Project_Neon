@@ -19,7 +19,7 @@ def get_connection():
         port=os.environ.get("PGPORT", "5432"),
         user=os.environ.get("PGUSER","postgres"),
         password=os.environ.get("PGPASSWORD",""),
-        dbname=os.environ.get("PDATABASE","finance_controller") 
+        dbname=os.environ.get("PGDATABASE","finance_controller") 
     )
     
 #=========== Convert all UTRs to UPPER CASE ==========#
@@ -57,31 +57,57 @@ def fetch_period(conn, period):
         
     return gateway_rows, bank_rows
 
+
+def fetch_merchant_records(conn, period):
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT order_id, payment_id, amount, status
+               FROM merchant_records WHERE period = %s""",
+            (period,),
+        )
+        rows = cur.fetchall()
+    return [
+        {"order_id": r[0], "payment_id": r[1], "amount": float(r[2]), "status": r[3]}
+        for r in rows
+    ]
+    
 #========== Writing Tables ==============#
 
-def write_results(conn, period, matches, exceptions):
+def write_results(conn, period, matches, exceptions, triggered_by=None, trigger_source="manual"):
     with conn.cursor() as cur:
+        # upsert: rerunning a period overwrites that period's slot, no duplicates
         cur.execute("DELETE FROM ledger_matches WHERE period = %s", (period,))
         cur.execute("DELETE FROM exceptions WHERE period = %s", (period,))
-        
+
         for m in matches:
             cur.execute(
-                """INSERT INTO ledger_matches (payment_id, period, match_type, matched_amount, bank_amount, risk, explanation)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                """,
+                """INSERT INTO ledger_matches
+                   (payment_id, period, match_type, matched_amount, bank_amount, risk, explanation)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (m["payment_id"], period, m["match_type"], m["matched_amount"],
-                 m["bank_amount"],m["risk"], m["explanation"]),
+                 m["bank_amount"], m["risk"], m["explanation"]),
             )
         for e in exceptions:
             cur.execute(
-                """INSERT INTO exceptions (payment_id, period, reason_code, reason_detail, recommended_action, risk, amount)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                """,
+                """INSERT INTO exceptions
+                   (payment_id, period, reason_code, reason_detail, recommended_action, risk, amount)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
                 (e["payment_id"], period, e["reason_code"], e["reason_detail"],
                  e["recommended_action"], e["risk"], e["amount"]),
             )
-    conn.commit()
 
+        # ---- audit trail ----
+        total = len(matches) + len(exceptions)
+        match_rate = round(len(matches) / total * 100, 2) if total else 0
+        cur.execute(
+            """INSERT INTO reconciliation_runs
+               (period, triggered_by, trigger_source, total_records, matched_count, exception_count, match_rate)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (period, triggered_by or "auto", trigger_source, total, len(matches), len(exceptions), match_rate),
+        )
+    conn.commit()
+ 
+ 
 def print_summary(period, total, matches, exceptions):
     n_match = len(matches)
     n_exc = len(exceptions)

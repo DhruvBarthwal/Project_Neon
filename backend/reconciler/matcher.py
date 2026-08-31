@@ -1,5 +1,5 @@
 from .algorithm import subset_sum_search
-from .constants import FEE_EPSILON,FEE_PCT,GST_PCT,AMOUNT_TOLERANCE, DATE_TOLERANCE_DAYS
+from .constants import CRITICAL_AMOUNT_THRESHOLD,FEE_EPSILON,FEE_PCT,GST_PCT,AMOUNT_TOLERANCE, DATE_TOLERANCE_DAYS
 from datetime import timedelta
 
 #======= Expected value after fee =========#
@@ -13,6 +13,13 @@ def within_date_tolerance(g_date, b_date, days=DATE_TOLERANCE_DAYS):
     return abs((b_date - g_date)) <= timedelta(days=days)
 
 #============== Helper functions ==========#
+
+def _risk_for_amount(base_risk: str, amount: float) -> str:
+
+    if base_risk in ("medium", "high") and amount is not None and amount >= CRITICAL_AMOUNT_THRESHOLD:
+        return "critical"
+    return base_risk
+
 
 def step_exact_match(gateway_rows, bank_by_utr, matched_payment_ids, matches):
     """Step 2: same UTR, same amount — resolves the easy majority for free."""
@@ -44,9 +51,44 @@ def step_lump_sum_unbundling(gateway_by_utr, bank_by_utr, matched_payment_ids, m
             continue
  
         for b in bank_by_utr.get(utr, []):
-            subset = subset_sum_search(unmatched_group, b["amount"])
+            result = subset_sum_search(unmatched_group, b["amount"])
+ 
+            if result["method"] == "too_complex":
+                for g in unmatched_group:
+                    exceptions.append({
+                        "payment_id": g["payment_id"],
+                        "reason_code": "lump_sum_too_complex",
+                        "reason_detail": None,
+                        "recommended_action": (
+                            "This lump-sum group is too large to safely auto-resolve — "
+                            "reconcile manually against the payout schedule."
+                        ),
+                        "risk": "high",
+                        "amount": g["amount"],
+                    })
+                    matched_payment_ids.add(g["payment_id"])
+                break
+ 
+            subset = result["subset"]
             if not subset:
                 continue
+ 
+            if result["ambiguous"]:
+                for g in unmatched_group:
+                    exceptions.append({
+                        "payment_id": g["payment_id"],
+                        "reason_code": "ambiguous_lump_sum_match",
+                        "reason_detail": None,
+                        "recommended_action": (
+                            f"More than one combination of payments sums to this bank "
+                            f"credit of {b['amount']} under UTR {utr} — cannot auto-resolve "
+                            f"with confidence, needs manual review."
+                        ),
+                        "risk": "critical",
+                        "amount": g["amount"],
+                    })
+                    matched_payment_ids.add(g["payment_id"])
+                break
  
             for g in subset:
                 matches.append({
@@ -55,7 +97,8 @@ def step_lump_sum_unbundling(gateway_by_utr, bank_by_utr, matched_payment_ids, m
                     "risk": "medium",
                     "explanation": (
                         f"Part of a bulk settlement of {b['amount']} "
-                        f"covering {len(subset)} payments under UTR {utr}."
+                        f"covering {len(subset)} payments under UTR {utr} "
+                        f"(uniquely resolvable combination, {result['method']})."
                     ),
                 })
                 matched_payment_ids.add(g["payment_id"])
@@ -70,7 +113,7 @@ def step_lump_sum_unbundling(gateway_by_utr, bank_by_utr, matched_payment_ids, m
                         "Likely a rolling reserve or pending refund — "
                         "verify against gateway payout schedule."
                     ),
-                    "risk": "medium",
+                    "risk": _risk_for_amount("medium", g["amount"]),
                     "amount": g["amount"],
                 })
                 matched_payment_ids.add(g["payment_id"])  # resolved as an exception
