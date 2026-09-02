@@ -1,4 +1,4 @@
-import { ReconciliationSummary, PeriodStatus, AuditRun } from "../types/types"
+import { ReconciliationSummary, MonthlyRiskPoint,PeriodStatus, TransactionInspectionDetails, AuditRun, AllTableRecords } from "../types/types"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 
@@ -73,4 +73,31 @@ export async function askQuestion(
   if (!res.ok) throw new Error("Failed to get an answer")
   const data = await res.json()
   return data.response as string
+}
+
+export async function fetchAllTables(period: string): Promise<AllTableRecords> {
+  const res = await fetch(`http://localhost:8000/api/reconciliation/tables?period=${encodeURIComponent(period)}`)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch tables for period ${period}`)
+  }
+  return res.json()
+}
+
+export async function fetchTransactionInspection(
+  paymentId: string,
+  period: string
+): Promise<TransactionInspectionDetails> {
+  const res = await fetch(
+    `http://localhost:8000/api/reconciliation/transaction/${encodeURIComponent(paymentId)}?period=${encodeURIComponent(period)}`
+  )
+  if (!res.ok) {
+    throw new Error(`Failed to fetch inspection details for ${paymentId}`)
+  }
+  return res.json()
+}
+
+export async function fetchRiskTrends(): Promise<MonthlyRiskPoint[]> {
+  const res = await fetch("http://localhost:8000/api/reconciliation/trends")
+  if (!res.ok) throw new Error("Failed to fetch risk trends")
+  return res.json()
 }

@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta
 
 import psycopg2
-from merchant_generator import insert_merchant_rows, generate_merchant_records
+from .merchant_generator import insert_merchant_rows, generate_merchant_records
 
 def get_connection():
     return psycopg2.connect(
@@ -193,7 +193,7 @@ def generate_baseline(conn, total_rows: int, period: str):
     base_date = datetime(int(period.split("-")[0]), int(period.split("-")[1]), 1)
 
     gateway_rows, bank_rows = [], []
-    n_lump_groups = max(1, total_rows // 100)  # a few lump-sum groups per ~100 rows
+    n_lump_groups = max(1, total_rows // 100)
     remaining = total_rows
 
     i = 1
@@ -209,7 +209,6 @@ def generate_baseline(conn, total_rows: int, period: str):
         gateway_rows.append(gw)
         bank_rows.append(bank)
         if gw["scenario"] == "duplicate_retry":
-            # append a second, near-identical row to simulate a retry
             retry = dict(gw)
             retry["payment_id"] = gw["payment_id"] + "_retry"
             retry["created_at"] = gw["created_at"] + timedelta(minutes=5)
@@ -218,9 +217,14 @@ def generate_baseline(conn, total_rows: int, period: str):
         i += 1
         remaining -= 1
 
+    # 1. Insert Gateway & Bank
     insert_rows(conn, gateway_rows, bank_rows)
-    print(f"Inserted {len(gateway_rows)} gateway rows / {len([b for b in bank_rows if b])} bank rows for {period}")
 
+    # 2. Insert Merchant Records (MUST RUN FOR EVERY PERIOD)
+    merchant_rows = generate_merchant_records(gateway_rows, period)
+    insert_merchant_rows(conn, merchant_rows)
+
+    print(f"[{period}] Inserted {len(gateway_rows)} Gateway | {len([b for b in bank_rows if b])} Bank | {len(merchant_rows)} Merchant rows")
 
 def trickle(conn, period: str, interval: int):
     base_date = datetime.now()
@@ -246,19 +250,32 @@ def trickle(conn, period: str, interval: int):
         print(f"[{datetime.now().isoformat(timespec='seconds')}] +{n} row(s) added to {period}")
 
 
+def seed_multiple_periods(conn, periods: list[str], rows_per_period: int):
+    for period in periods:
+        print(f"\n--- Seeding period: {period} ({rows_per_period} records) ---")
+        generate_baseline(conn, rows_per_period, period)
+        # Generate and insert merchant records
+        # (Using gateway rows already created in baseline)
+        print(f"Completed seeding for {period}")
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--baseline", type=int, help="number of baseline rows to generate")
-    ap.add_argument("--period", type=str, default="2026-05")
-    ap.add_argument("--trickle", action="store_true", help="run the periodic trickle loop")
-    ap.add_argument("--interval", type=int, default=5, help="seconds between trickle inserts")
+    ap.add_argument("--baseline", type=int, default=100, help="number of rows per period")
+    ap.add_argument("--period", type=str, default="2026-05", help="single period e.g. 2026-05")
+    ap.add_argument(
+        "--seed-all",
+        action="store_true",
+        help="Generate baseline data for Q1 and Q2 2026",
+    )
     args = ap.parse_args()
 
     conn = get_connection()
     try:
-        if args.baseline:
+        if args.seed_all:
+            target_periods = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
+            for p in target_periods:
+                generate_baseline(conn, args.baseline, p)
+        elif args.baseline:
             generate_baseline(conn, args.baseline, args.period)
-        if args.trickle:
-            trickle(conn, args.period, args.interval)
     finally:
         conn.close()

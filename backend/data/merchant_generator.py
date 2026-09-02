@@ -1,6 +1,8 @@
 import random
 from datetime import timedelta
 
+from reconciler.main import get_connection, fetch_period
+
 MERCHANT_SCENARIO_WEIGHTS = [
     ("merchant_synced", 0.85),
     ("webhook_lag", 0.10),
@@ -24,7 +26,7 @@ def generate_merchant_records(gateway_rows, period):
 
     for g in gateway_rows:
         if not g.get("order_id"):
-            continue  
+            continue
         scenario = _weighted_merchant_scenario()
 
         if scenario == "merchant_synced":
@@ -42,7 +44,7 @@ def generate_merchant_records(gateway_rows, period):
         elif scenario == "webhook_lag":
             merchant_rows.append({
                 "order_id": g["order_id"],
-                "payment_id": None,          
+                "payment_id": None,
                 "amount": g["amount"],
                 "status": "pending",
                 "marked_paid_at": None,
@@ -86,3 +88,24 @@ def insert_merchant_rows(conn, merchant_rows):
                  m["marked_paid_at"], m["period"], m["scenario"]),
             )
     conn.commit()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--period", type=str, required=True)
+    args = ap.parse_args()
+
+    conn = get_connection()
+    try:
+        gateway_rows, _ = fetch_period(conn, args.period)
+        if not gateway_rows:
+            print(f"No gateway records found for period {args.period}. Generate gateway data first.")
+            raise SystemExit(1)
+
+        merchant_rows = generate_merchant_records(gateway_rows, args.period)
+        insert_merchant_rows(conn, merchant_rows)
+        print(f"Inserted {len(merchant_rows)} merchant records for period {args.period}.")
+    finally:
+        conn.close()
