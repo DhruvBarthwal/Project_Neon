@@ -7,7 +7,7 @@ def cross_check_merchant(gateway_rows, merchant_rows, matched_payment_ids, excep
 
     for g in gateway_rows:
         if g["payment_id"] not in matched_payment_ids:
-            continue  # only checking payments that DID settle on the gateway+bank side
+            continue  
         order_id = g.get("order_id")
         if not order_id:
             continue

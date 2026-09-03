@@ -30,10 +30,34 @@ function formatDate(iso: string | null | undefined) {
 }
 
 const RISK_BADGES: Record<RiskLevel, string> = {
-  low: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  high: "bg-rose-50 text-rose-700 border-rose-200",
-  critical: "bg-red-100 text-red-800 border-red-300 font-bold",
+  low: " text-emerald-700",
+  medium: "text-amber-700",
+  high: "text-rose-700",
+  critical: "text-red-800 font-bold",
+}
+
+const HUMAN_REASON_LABELS: Record<string, string> = {
+  merchant_status_lag: "Merchant Order Status Lag (Webhook Delay)",
+  fee_deduction_mismatch: "MDR / Gateway Fee Variance",
+  fee_delta: "Fee & Tax Variance (MDR + GST)",
+  settlement_delay: "Bank Settlement Timing Lag (T+2 Drift)",
+  garbled_utr: "Bank UTR Format Discrepancy",
+  missing_bank_record: "Unsettled Inbound Credit (Pending Bank Deposit)",
+  missing_gateway_record: "Unmatched Bank Credit (Missing Gateway Feed)",
+  duplicate_retry: "Benign Checkout Retry (Order Already Settled)",
+  held_back_from_lump_sum: "Batch Rolling Reserve Holdback",
+  ambiguous_lump_sum_match: "Ambiguous Bulk Batch Allocation",
+  lump_sum_too_complex: "High-Complexity Settlement Cluster",
+  unresolvable: "Critical Unreconciled Exception",
+};
+
+export function formatReasonCode(code?: string | null): string {
+  if (!code) return "Standard Exception";
+  if (HUMAN_REASON_LABELS[code]) return HUMAN_REASON_LABELS[code];
+
+  return code
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 const InspectionModal = ({ paymentId, period, onClose }: Props) => {
@@ -72,17 +96,17 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
           <div>
             <div className="flex items-center gap-2">
               <span
-                className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border ${
+                className={`text-[10px] font-bold uppercase tracking-wider py-0.5 rounded-md ${
                   isException
-                    ? "bg-rose-50 text-rose-700 border-rose-200"
-                    : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    ? " text-rose-700"
+                    : " text-emerald-700"
                 }`}
               >
                 {isException ? "Exception Root-Cause Audit" : "Reconciled Transaction Audit"}
               </span>
               {isLumpSum && (
                 <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border bg-purple-50 text-purple-700 border-purple-200">
-                  Lump-Sum Batch Member
+                  Bulk Payment Batch Member
                 </span>
               )}
               <span className="text-xs text-gray-400 font-mono">Period: {period}</span>
@@ -113,17 +137,17 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
               <div
                 className={`p-4 rounded-2xl border ${
                   isException
-                    ? "bg-rose-50/60 border-rose-200/80 text-rose-950"
-                    : "bg-emerald-50/60 border-emerald-200/80 text-emerald-950"
+                    ? " border-rose-200/80 text-rose-950"
+                    : " border-emerald-200/80 text-emerald-950"
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-sm">
-                    {isException ? `Flagged: ${data.exception?.reason_code}` : "Successfully Matched"}
+                    {isException ? `Flagged: ${formatReasonCode(data.exception?.reason_code)}` : "Successfully Matched"}
                   </span>
                   {data.exception && (
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded border uppercase ${
+                      className={`text-[10px] px-2 py-0.5 rounded  uppercase ${
                         RISK_BADGES[data.exception.risk]
                       }`}
                     >
@@ -148,7 +172,7 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
                       <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wide">
                         1. Merchant Order Book
                       </span>
-                      <span className="bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                      <span className=" text-emerald-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
                         Origin / OMS
                       </span>
                     </div>
@@ -204,7 +228,7 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
                       <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wide">
                         2. Gateway Ledger
                       </span>
-                      <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                      <span className=" text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
                         Processor / Ingest
                       </span>
                     </div>
@@ -254,7 +278,7 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
                       <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wide">
                         3. Bank Settlement
                       </span>
-                      <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                      <span className=" text-purple-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
                         Vault / Payout
                       </span>
                     </div>

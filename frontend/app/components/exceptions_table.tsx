@@ -1,41 +1,43 @@
-import React from 'react'
-import { ReconciliationSummary, RiskLevel } from '../types/types'
+import React from "react";
+import { ReconciliationSummary, RiskLevel } from "../types/types";
 
 interface Props {
-  summary: ReconciliationSummary
-  onViewAll?: () => void
+  summary: ReconciliationSummary;
+  onViewAll?: () => void;
 }
 
 const RISK_BADGES: Record<RiskLevel, string> = {
-  low: "bg-emerald-50 text-emerald-700 border-emerald-100",
-  medium: "bg-amber-50 text-amber-700 border-amber-100",
-  high: "bg-rose-50 text-rose-700 border-rose-100",
-  critical: "bg-red-100 text-red-800 border-red-200 font-bold"
-}
+  low: "text-emerald-700",
+  medium: "text-amber-700",
+  high: "text-rose-700",
+  critical: "text-red-800",
+};
 
 function formatInr(amount: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
-    maximumFractionDigits: 0
-  }).format(amount)
+    maximumFractionDigits: 0,
+  }).format(amount);
 }
 
 const ExceptionsTable = ({ summary, onViewAll }: Props) => {
   return (
-    <div 
+    <div
       onClick={onViewAll}
-      className="bg-white rounded-2xl p-3.5 border border-gray-100 shadow-sm flex flex-col h-full overflow-hidden cursor-pointer hover:border-blue-200/80 hover:shadow-md transition group"
+      className="bg-white rounded-3xl p-4 border border-slate-100/90 border-t-white shadow-[0_14px_30px_-8px_rgba(15,23,42,0.12),0_4px_10px_-2px_rgba(15,23,42,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] hover:shadow-[0_20px_35px_-10px_rgba(15,23,42,0.15),0_6px_12px_-3px_rgba(15,23,42,0.07)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col h-full overflow-hidden cursor-pointer group"
     >
       {/* Header */}
       <div className="flex items-center justify-between pb-2 flex-shrink-0">
         <div className="flex items-center gap-1.5">
-          <h3 className="font-bold text-xs text-gray-900 group-hover:text-blue-600 transition">
+          <h3 className="font-bold text-xs text-gray-900 ">
             Active Exceptions
           </h3>
-          <span className="text-[10px] text-gray-400">({summary.exceptions.length})</span>
+          <span className="text-[10px] text-gray-400">
+            ({summary.exceptions.length})
+          </span>
         </div>
-        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 group-hover:bg-blue-50 group-hover:text-blue-600 transition">
+        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 ">
           {summary.exceptions.length} Items
         </span>
       </div>
@@ -54,17 +56,20 @@ const ExceptionsTable = ({ summary, onViewAll }: Props) => {
           <tbody className="divide-y divide-gray-50">
             {summary.exceptions.length === 0 ? (
               <tr>
-                <td colSpan={4} className="py-6 text-center text-gray-400 text-xs">
+                <td
+                  colSpan={4}
+                  className="py-6 text-center text-gray-400 text-xs"
+                >
                   Zero discrepancies detected.
                 </td>
               </tr>
             ) : (
               summary.exceptions.map((e) => (
-                <tr 
-                  key={e.paymentId} 
+                <tr
+                  key={e.paymentId}
                   className="hover:bg-blue-50/40 transition"
                 >
-                  <td className="py-2 px-1 font-mono text-gray-700 font-medium group-hover:text-blue-600 transition">
+                  <td className="py-2 px-1 font-mono text-gray-700 font-medium">
                     {e.paymentId}
                   </td>
                   <td className="py-2 px-1 text-gray-500 truncate max-w-[130px]">
@@ -74,7 +79,9 @@ const ExceptionsTable = ({ summary, onViewAll }: Props) => {
                     {formatInr(e.amount)}
                   </td>
                   <td className="py-2 px-1 text-center">
-                    <span className={`inline-block text-[9px] px-1.5 py-0.2 rounded border font-medium uppercase ${RISK_BADGES[e.risk]}`}>
+                    <span
+                      className={`inline-block text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${RISK_BADGES[e.risk]}`}
+                    >
                       {e.risk}
                     </span>
                   </td>
@@ -85,7 +92,7 @@ const ExceptionsTable = ({ summary, onViewAll }: Props) => {
         </table>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default ExceptionsTable
+export default ExceptionsTable;

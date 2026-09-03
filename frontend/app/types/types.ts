@@ -141,3 +141,16 @@ export interface MonthlyRiskPoint {
   amountAtRisk: number
   exceptionCount: number
 }
+
+export interface AuditLogEntry {
+  id: string;
+  created_at: string;
+  period: string;
+  actor: string;
+  event_type: "CYCLE_RUN" | "RECORD_AUDIT" | string;
+  intent: string;
+  target_identifier: string;
+  outcome_status: string;
+  exposure_amount: number | string;
+  metadata: Record<string, any>;
+}

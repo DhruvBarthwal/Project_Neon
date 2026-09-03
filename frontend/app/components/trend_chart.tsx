@@ -90,7 +90,7 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
     points.find((p) => p.period === currentPeriod) || points[points.length - 1];
 
   return (
-    <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm flex flex-col justify-between">
+    <div className="bg-white rounded-3xl p-5 border border-slate-100/90 border-t-white shadow-[0_14px_30px_-8px_rgba(15,23,42,0.12),0_4px_10px_-2px_rgba(15,23,42,0.05),inset_0_1px_0_rgba(255,255,255,0.9)] hover:shadow-[0_20px_35px_-10px_rgba(15,23,42,0.15),0_6px_12px_-3px_rgba(15,23,42,0.07)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col justify-between">
       {/* Header Info */}
       <div className="flex items-center justify-between pb-2 flex-shrink-0">
         <div>
@@ -115,9 +115,9 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 px-2.5 py-1 rounded-xl">
-          <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-          <span className="text-[10px] font-bold text-rose-700">
+        <div className="flex items-center gap-1.5 bg-gray-100 border border-rose-100 px-2.5 py-1 rounded-xl">
+          <span className="w-2 h-2 rounded-full bg-gray-500 animate-pulse" />
+          <span className="text-[10px] font-bold text-gray-700">
             {activePoint.exceptionCount} Active Exceptions
           </span>
         </div>
@@ -131,8 +131,8 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
         >
           <defs>
             <linearGradient id="riskGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#ef4444" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0" />
+              <stop offset="0%" stopColor="#091B31" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#A66565" stopOpacity="0.0" />
             </linearGradient>
           </defs>
 
@@ -186,7 +186,7 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
             <path
               d={pathString}
               fill="none"
-              stroke="#f87171"
+              stroke="#918181"
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -200,7 +200,7 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
               y1={padTop}
               x2={activePoint.x}
               y2={height - padBottom}
-              stroke="#3b82f6"
+              stroke="#07152B"
               strokeDasharray="2 2"
               strokeWidth="1.5"
             />
@@ -222,9 +222,9 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
                       cx={p.x}
                       cy={p.y}
                       r="5"
-                      fill="#3b82f6"
+                      fill="#030B17"
                       fillOpacity="0.3"
-                      stroke="#2563eb"
+                      stroke="#00040A"
                       strokeWidth="1.5"
                     >
                       <animate
@@ -250,7 +250,7 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
                   r={isCurrent ? "5" : "3.5"}
                   className={
                     isCurrent
-                      ? "fill-blue-600 stroke-white"
+                      ? "fill-gray-600 stroke-white"
                       : "fill-white stroke-rose-400 group-hover:stroke-rose-600"
                   }
                   strokeWidth={isCurrent ? "2" : "1.5"}
@@ -289,7 +289,7 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
                   textAnchor="middle"
                   fontSize="10"
                   fontWeight={isCurrent ? "bold" : "500"}
-                  className={isCurrent ? "fill-blue-600" : "fill-gray-400"}
+                  className={isCurrent ? "fill-gray-600" : "fill-gray-400"}
                 >
                   {p.label.split(" ")[0]}
                 </text>

@@ -8,20 +8,11 @@ import psycopg2.extras
 from .matcher import run_matching
 from .constants import FEE_EPSILON,FEE_PCT,GST_PCT,AMOUNT_TOLERANCE, DATE_TOLERANCE_DAYS
 from dotenv import load_dotenv
+from reconciler.audit_service import record_business_audit
+from reconciler.db import get_connection
 
 load_dotenv()
 
-#======== Connection ==========#
-
-def get_connection():
-    return psycopg2.connect(
-        host=os.environ.get("PGHOST", "localhost"),
-        port=os.environ.get("PGPORT", "5432"),
-        user=os.environ.get("PGUSER","postgres"),
-        password=os.environ.get("PGPASSWORD",""),
-        dbname=os.environ.get("PGDATABASE","finance_controller") 
-    )
-    
 #=========== Convert all UTRs to UPPER CASE ==========#
     
 def normalize_utr(utr):
@@ -74,39 +65,93 @@ def fetch_merchant_records(conn, period):
 #========== Writing Tables ==============#
 
 def write_results(conn, period, matches, exceptions, triggered_by=None, trigger_source="manual"):
+    import json
+
     with conn.cursor() as cur:
-        # upsert: rerunning a period overwrites that period's slot, no duplicates
+        # 1. Clear previous run data for this period
         cur.execute("DELETE FROM ledger_matches WHERE period = %s", (period,))
         cur.execute("DELETE FROM exceptions WHERE period = %s", (period,))
 
+        # 2. Insert matched rows
         for m in matches:
             cur.execute(
                 """INSERT INTO ledger_matches
                    (payment_id, period, match_type, matched_amount, bank_amount, risk, explanation)
                    VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (m["payment_id"], period, m["match_type"], m["matched_amount"],
-                 m["bank_amount"], m["risk"], m["explanation"]),
+                (
+                    m["payment_id"],
+                    period,
+                    m["match_type"],
+                    m["matched_amount"],
+                    m["bank_amount"],
+                    m["risk"],
+                    m["explanation"],
+                ),
             )
+
+        # 3. Insert exception rows
         for e in exceptions:
             cur.execute(
                 """INSERT INTO exceptions
                    (payment_id, period, reason_code, reason_detail, recommended_action, risk, amount)
                    VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (e["payment_id"], period, e["reason_code"], e["reason_detail"],
-                 e["recommended_action"], e["risk"], e["amount"]),
+                (
+                    e["payment_id"],
+                    period,
+                    e["reason_code"],
+                    e["reason_detail"],
+                    e["recommended_action"],
+                    e["risk"],
+                    e["amount"],
+                ),
             )
 
-        # ---- audit trail ----
+        # 4. Engine Run Metric
         total = len(matches) + len(exceptions)
         match_rate = round(len(matches) / total * 100, 2) if total else 0
         cur.execute(
             """INSERT INTO reconciliation_runs
                (period, triggered_by, trigger_source, total_records, matched_count, exception_count, match_rate)
                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-            (period, triggered_by or "auto", trigger_source, total, len(matches), len(exceptions), match_rate),
+            (
+                period,
+                triggered_by or "auto",
+                trigger_source,
+                total,
+                len(matches),
+                len(exceptions),
+                match_rate,
+            ),
         )
+
+        # 5. Business Audit Log (Reuses the active transaction cursor)
+        actor = triggered_by or "reconciliation_engine"
+        total_risk = sum(float(e.get("amount") or 0.0) for e in exceptions)
+        metadata = json.dumps({
+            "matches_count": len(matches),
+            "exceptions_count": len(exceptions),
+            "match_rate_pct": match_rate,
+            "trigger_source": trigger_source,
+        })
+
+        cur.execute(
+            """INSERT INTO audit_logs 
+               (period, actor, event_type, intent, target_identifier, outcome_status, exposure_amount, metadata)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                period,
+                actor,
+                "CYCLE_RUN",
+                "reconcile_cycle",
+                period,
+                "COMPLETED",
+                total_risk,
+                metadata,
+            ),
+        )
+
+    # 6. Single atomic commit for ledger data + audit trail
     conn.commit()
- 
  
 def print_summary(period, total, matches, exceptions):
     n_match = len(matches)

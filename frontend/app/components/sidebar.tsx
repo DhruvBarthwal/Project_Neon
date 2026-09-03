@@ -11,7 +11,7 @@ interface Props {
 
 const Sidebar = ({ view, onSelect }: Props) => {
   return (
-    <div className="h-full w-1/6 border-r border-gray-100 p-4 flex flex-col justify-between">
+    <div className=" bg-gray-300 h-full w-1/6 border-r border-gray-100 p-4 flex flex-col justify-between">
       <div>
         <p className="font-semibold text-sm mb-4 text-gray-900">Finance Controller</p>
         <nav className="flex flex-col gap-1 text-sm text-gray-600">
@@ -29,7 +29,7 @@ const Sidebar = ({ view, onSelect }: Props) => {
               view === "tables" ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700"
             }`}
           >
-            Tables &amp; Ledger
+            Tables
           </button>
           <button
             onClick={() => onSelect("qa")}
@@ -37,7 +37,7 @@ const Sidebar = ({ view, onSelect }: Props) => {
               view === "qa" ? "bg-gray-900 text-white" : "hover:bg-gray-50 text-gray-700"
             }`}
           >
-            Q&amp;A
+            Assistant
           </button>
         </nav>
       </div>

@@ -137,21 +137,21 @@ def _fetch_summary_rows(conn, period: str):
 
         # Deduplicate exceptions by payment_id so repeat flags don't push the rate to 100%
         cur.execute(
-            """SELECT DISTINCT ON (payment_id) payment_id, reason_code, amount, risk 
-               FROM exceptions
-               WHERE period = %s 
-               ORDER BY payment_id, amount DESC NULLS LAST""",
-            (period,),
-        )
+    """SELECT DISTINCT ON (payment_id) payment_id, reason_code, amount, risk, recommended_action 
+       FROM exceptions
+       WHERE period = %s 
+       ORDER BY payment_id, amount DESC NULLS LAST""",
+    (period,),
+    )
         exception_rows = cur.fetchall()
 
         cur.execute(
-            """SELECT explanation, bank_amount, payment_id, matched_amount
-               FROM ledger_matches
-               WHERE period = %s AND match_type = 'lump_sum'
-               ORDER BY explanation""",
-            (period,),
-        )
+    """SELECT explanation, bank_amount, payment_id, matched_amount
+       FROM ledger_matches
+       WHERE period = %s AND match_type = 'lump_sum'
+       ORDER BY explanation""",
+    (period,),
+)
         lump_sum_rows = cur.fetchall()
 
     return run_record, total_records, breakdown_rows, exception_rows, lump_sum_rows
@@ -173,6 +173,7 @@ def _build_exceptions(exception_rows):
             "reasonLabel": REASON_LABELS.get(row[1], row[1].replace("_", " ").title()),
             "amount": float(row[2]) if row[2] is not None else 0.0,
             "risk": row[3],
+            "recommendedAction": row[4],
         }
         for row in exception_rows
     ]

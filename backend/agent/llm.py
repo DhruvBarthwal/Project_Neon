@@ -1,48 +1,80 @@
 import os
+import json
+import re
+from typing import List, Optional
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
-from langchain_core.messages import SystemMessage
-from typing import Literal, Optional, List
-from .prompts import SYSTEM_PROMPT, MAX_PAYMENT_IDS_PER_QUESTION
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
 
-load_dotenv()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
+# General LLM for completions & reports
 llm = ChatGroq(
-    model= "openai/gpt-oss-120b"
+    groq_api_key=GROQ_API_KEY,
+    model_name=MODEL_NAME,
+    temperature=0.2,
 )
 
-class ClassifyIntent(BaseModel):
-    """Classify a finance-reconciliation question into an intent and extract entities."""
- 
-    intent: Literal[
-        "lookup_record", "match_status", "summary",
-        "filtered_list", "grouped_reasons", "not_found",
-    ] = Field(description="Which of the 6 fixed intents this question falls into")
-    payment_ids: List[str] = Field(
-        default_factory=list,
-        description=f"Every payment ID the question asks about, up to {MAX_PAYMENT_IDS_PER_QUESTION}",
-    )
-    min_amount: Optional[float] = Field(default=None, description="for filtered_list amount thresholds")
-    period: Optional[str] = Field(default=None, description="e.g. 2026-05, only if explicitly named")
-    
-classifier_llm = llm.bind_tools([ClassifyIntent], tool_choice="ClassifyIntent")
+# Classifier LLM pinned to strict JSON object output (no tool-calling crash)
+classifier_llm = ChatGroq(
+    groq_api_key=GROQ_API_KEY,
+    model_name=MODEL_NAME,
+    temperature=0.0,
+    model_kwargs={"response_format": {"type": "json_object"}},
+)
 
+def chat(prompt: str, max_tokens: int = 3072) -> str:
+    """General completion helper for structured audits & markdown tables."""
+    response = llm.invoke(
+        [HumanMessage(content=prompt)],
+        max_tokens=max_tokens,
+    )
+    return str(response.content)
 
 def classify(messages: list) -> dict:
+    from .prompts import SYSTEM_PROMPT
 
-    full_messages = [SystemMessage(content=SYSTEM_PROMPT)] + list(messages)
-    response = classifier_llm.invoke(full_messages)
- 
-    if not response.tool_calls:
-        return {"intent": "not_found", "payment_ids": [], "min_amount": None, "period": None}
- 
-    args = response.tool_calls[0]["args"]
-    args["payment_ids"] = (args.get("payment_ids") or [])[:MAX_PAYMENT_IDS_PER_QUESTION]
-    return args
+    # 1. Extract ONLY the latest user message
+    user_query = ""
+    for m in reversed(messages):
+        content = getattr(m, "content", None) or (m.get("content") if isinstance(m, dict) else "")
+        role = getattr(m, "type", None) or (m.get("role") if isinstance(m, dict) else "")
+        if role in ("user", "human") and content:
+            user_query = content
+            break
 
+    if not user_query:
+        return {"intent": "not_found", "payment_ids": [], "utrs": []}
 
-def chat(prompt: str, max_tokens: int = 150) -> str:
-    """Plain text explanation. No tool binding needed here"""
-    response = llm.invoke(prompt, max_tokens=max_tokens)
-    return response.content.strip()
+    prompt = f"""{SYSTEM_PROMPT}
+
+Respond ONLY with a valid JSON object matching this structure:
+{{
+  "intent": "lookup_record" | "metric_query" | "match_status" | "summary" | "compare_months" | "filtered_list" | "grouped_reasons" | "table_navigation" | "batch_unbundling_audit" | "reconcile_cycle" | "not_found",
+  "period": "YYYY-MM" or null,
+  "compare_period": "YYYY-MM" or null,
+  "target_table": "exceptions" | "ledger_matches" | "gateway" | "bank" | "merchant" or null,
+  "payment_ids": ["pay_..."],
+  "utrs": ["UTR..."],
+  "min_amount": number or null
+}}
+
+User Query: "{user_query}"
+"""
+
+    try:
+        response = classifier_llm.invoke([HumanMessage(content=prompt)])
+        parsed = json.loads(response.content)
+        
+        # Ensure fallback lists exist
+        if "payment_ids" not in parsed or not isinstance(parsed["payment_ids"], list):
+            parsed["payment_ids"] = []
+        if "utrs" not in parsed or not isinstance(parsed["utrs"], list):
+            parsed["utrs"] = []
+
+        return parsed
+
+    except Exception as e:
+        print(">>> GROQ CLASSIFY ERROR:", repr(e))
+        return {"intent": "not_found", "payment_ids": [], "utrs": []}

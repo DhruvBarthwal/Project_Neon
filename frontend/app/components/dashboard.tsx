@@ -51,8 +51,7 @@ const Dashboard = ({ period, periods, onSelectPeriod, onNavigateToTables }: Prop
       {/* Top Header Bar with Month Switcher */}
       <header className="flex items-center justify-between pb-3 flex-shrink-0">
         <div>
-          <h1 className="font-bold text-xl text-gray-900 tracking-tight leading-none">Dashboard</h1>
-          <p className="text-[11px] text-gray-400 mt-0.5">Automated Recon &amp; Exception Center</p>
+          <h1 className="font-bold text-2xl text-gray-900 tracking-tight leading-none">Dashboard</h1>
         </div>
 
         <div className="flex items-center gap-2">
@@ -65,7 +64,7 @@ const Dashboard = ({ period, periods, onSelectPeriod, onNavigateToTables }: Prop
             >
               {periods.map((p) => (
                 <option key={p.period} value={p.period}>
-                  {p.label} {p.status === "done" ? "✓" : "(Not Run)"}
+                  {p.label} 
                 </option>
               ))}
             </select>
@@ -80,7 +79,7 @@ const Dashboard = ({ period, periods, onSelectPeriod, onNavigateToTables }: Prop
           <button
             onClick={handleRun}
             disabled={running}
-            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 transition text-white text-xs font-semibold shadow-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+            className="px-3.5 py-1.5 rounded-xl bg-gray-600 hover:bg-gray-700 active:scale-95 transition text-white text-xs font-semibold shadow-sm disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
           >
             {running ? (
               <>
@@ -101,6 +100,12 @@ const Dashboard = ({ period, periods, onSelectPeriod, onNavigateToTables }: Prop
             <span className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             <p className="text-gray-400 text-xs">Loading records for {period}...</p>
           </div>
+        </div>
+      ) : summary === null ? (
+        <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center shadow-sm">
+          <p className="text-sm text-gray-500">
+            Couldn't load data for {period}. Try refreshing or check the backend connection.
+          </p>
         </div>
       ) : isNotRun ? (
         /* Empty State for Unreconciled Month */
@@ -124,7 +129,7 @@ const Dashboard = ({ period, periods, onSelectPeriod, onNavigateToTables }: Prop
         /* Reconciled Active Dashboard */
         <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-hidden">
           <div className="flex-shrink-0">
-            <Metrics summary={summary!} />
+            <Metrics summary={summary} />
           </div>
 
           <div className="flex-1 grid grid-cols-12 gap-3 min-h-0 overflow-hidden">
@@ -133,13 +138,13 @@ const Dashboard = ({ period, periods, onSelectPeriod, onNavigateToTables }: Prop
                 <TrendChart currentPeriod={period} onSelectPeriod={onSelectPeriod} />
               </div>
               <div className="flex-1 min-h-0">
-                <ExceptionsTable summary={summary!} onViewAll={onNavigateToTables} />
+                <ExceptionsTable summary={summary} onViewAll={onNavigateToTables} />
               </div>
             </section>
 
             <aside className="col-span-4 flex flex-col gap-3 min-h-0 h-full overflow-hidden">
               <div className="flex-shrink-0">
-                <LumpSumHighlights summary={summary!} />
+                <LumpSumHighlights summary={summary} />
               </div>
               <div className="flex-shrink-0">
                 <MiniQAPanel period={period} />

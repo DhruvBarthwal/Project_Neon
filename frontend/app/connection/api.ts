@@ -51,13 +51,11 @@ export async function runReconciliation(period: string): Promise<ReconciliationS
   return res.json()
 }
 
-export async function fetchAuditLog(period?: string): Promise<AuditRun[]> {
-  const url = period
-    ? `${API_BASE}/api/reconciliation/audit?period=${period}`
-    : `${API_BASE}/api/reconciliation/audit`
-  const res = await authedFetch(url)
-  if (!res.ok) throw new Error("Failed to load audit log")
-  return res.json()
+export async function fetchAuditLog(period: string) {
+  const res = await authedFetch(`${API_BASE}/api/audit-trail?period=${encodeURIComponent(period)}`);
+  if (!res.ok) throw new Error("Failed to fetch audit trail");
+  const data = await res.json();
+  return data.records || [];
 }
 
 export async function askQuestion(

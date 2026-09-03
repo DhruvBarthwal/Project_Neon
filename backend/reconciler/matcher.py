@@ -96,10 +96,9 @@ def step_lump_sum_unbundling(gateway_by_utr, bank_by_utr, matched_payment_ids, m
                     "matched_amount": g["amount"], "bank_amount": b["amount"],
                     "risk": "medium",
                     "explanation": (
-                        f"Part of a bulk settlement of {b['amount']} "
-                        f"covering {len(subset)} payments under UTR {utr} "
-                        f"(uniquely resolvable combination, {result['method']})."
-                    ),
+    f"Part of a bulk settlement of {b['amount']} "
+    f"covering {len(subset)} payments under UTR {utr}."
+),
                 })
                 matched_payment_ids.add(g["payment_id"])
  

@@ -6,6 +6,7 @@ import nemoguardrails.llm.clients.base as _base
 import time
 import json
 import psycopg2.extras
+import logfire
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,8 +16,8 @@ from nemoguardrails.rails.llm.options import GenerationOptions
 from dotenv import load_dotenv
 from langgraph.types import Command
 from datetime import datetime
+from typing import Optional
 
-# from agent.security.agent_identity import issue_agent_identity, verify_agent_identity
 from agent.graph import graph
 
 from reconciler.main import get_connection, fetch_period, write_results
@@ -29,9 +30,15 @@ from reconciler.main import fetch_merchant_records
 
 #========= CONNECTION ==========#
 
-app = FastAPI()
+app = FastAPI(title="Reconciliation Engine")
 
 load_dotenv()
+
+#-------Pydanctic Logfire
+
+logfire.configure()
+logfire.instrument_fastapi(app)
+logfire.instrument_pydantic()
 
 _orig_init = _base.BaseClient.__init__
 
@@ -358,5 +365,37 @@ def get_transaction_details(payment_id: str, period: str):
                 "reconciled_match": clean_dict(matched),
                 "exception": clean_dict(exception),
             }
+    finally:
+        conn.close()
+        
+@app.get("/api/audit-trail")
+def get_audit_trail(period: Optional[str] = None):
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if period and period.lower() != "all":
+                cur.execute(
+                    """
+                    SELECT id, created_at, period, actor, event_type, intent, 
+                           target_identifier, outcome_status, exposure_amount, metadata
+                    FROM audit_logs
+                    WHERE period = %s
+                    ORDER BY created_at DESC
+                    LIMIT 100
+                    """,
+                    (period,),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, created_at, period, actor, event_type, intent, 
+                           target_identifier, outcome_status, exposure_amount, metadata
+                    FROM audit_logs
+                    ORDER BY created_at DESC
+                    LIMIT 100
+                    """
+                )
+            rows = cur.fetchall()
+            return {"records": rows}
     finally:
         conn.close()
