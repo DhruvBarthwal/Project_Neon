@@ -1,4 +1,4 @@
-# Project Neon — Reconciliation Engine
+# TriagePay — Reconciliation Engine
 
 An autonomous 3-way financial reconciliation engine that resolves discrepancies across Gateway, Bank, and Merchant ledgers in real time, powered by an AI copilot for natural language root-cause analysis.
 
