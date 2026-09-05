@@ -8,7 +8,6 @@ import psycopg2.extras
 from .matcher import run_matching
 from .constants import FEE_EPSILON,FEE_PCT,GST_PCT,AMOUNT_TOLERANCE, DATE_TOLERANCE_DAYS
 from dotenv import load_dotenv
-from reconciler.audit_service import record_business_audit
 from reconciler.db import get_connection
 
 load_dotenv()

@@ -1,5 +1,5 @@
 import json
-from reconciler.db import get_connection
+from reconciler.main import get_connection
 
 def record_business_audit(
     period: str,
