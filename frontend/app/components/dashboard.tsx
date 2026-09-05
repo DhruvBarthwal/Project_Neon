@@ -110,19 +110,19 @@ const Dashboard = ({ period, periods, onSelectPeriod, onNavigateToTables }: Prop
       ) : isNotRun ? (
         /* Empty State for Unreconciled Month */
         <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center shadow-sm">
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-xl font-bold mb-3">
-            ⏱
-          </div>
+          <img
+            src="/emptyDesign.svg"
+            alt="Pending Reconciliation"
+            className="w-32 h-auto mb-4 object-contain"
+          />
           <h3 className="text-base font-bold text-gray-900">Reconciliation Pending for {period}</h3>
-          <p className="text-xs text-gray-400 max-w-sm mt-1 mb-5">
-            Raw ingest records ({summary?.totalRecords ?? 0} rows) are loaded into the ledger, but 3-way reconciliation has not been executed yet.
-          </p>
+          
           <button
             onClick={handleRun}
             disabled={running}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
+            className="px-4 mt-5 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
           >
-            {running ? "Processing Batch..." : "Run 3-Way Reconciliation Now"}
+            {running ? "Processing Batch..." : "Run Reconciliation"}
           </button>
         </div>
       ) : (

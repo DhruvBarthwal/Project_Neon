@@ -1,6 +1,8 @@
-from .algorithm import subset_sum_search
+from .algorithm import _to_paise, subset_sum_search
 from .constants import CRITICAL_AMOUNT_THRESHOLD,FEE_EPSILON,FEE_PCT,GST_PCT,AMOUNT_TOLERANCE, DATE_TOLERANCE_DAYS
 from datetime import timedelta
+
+FEE_EPSILON_PAISE = _to_paise(FEE_EPSILON)
 
 #======= Expected value after fee =========#
 
@@ -51,8 +53,7 @@ def step_lump_sum_unbundling(gateway_by_utr, bank_by_utr, matched_payment_ids, m
             continue
  
         for b in bank_by_utr.get(utr, []):
-            result = subset_sum_search(unmatched_group, b["amount"])
- 
+            result = subset_sum_search(unmatched_group, b["amount"], tolerance_paise=FEE_EPSILON_PAISE)
             if result["method"] == "too_complex":
                 for g in unmatched_group:
                     exceptions.append({
@@ -202,42 +203,33 @@ def step_log_remaining_as_exceptions(gateway_rows, bank_by_utr, matched_payment_
 
 #============= Main function =========#
         
-def run_matching(gateway_rows, bank_rows):
-    """It returns matches and exception lists"""
+def run_matching(gateway_rows, bank_rows, already_matched_payment_ids: set = None):
+    """It returns matches and exception lists.
+ 
+    already_matched_payment_ids: payment IDs already cleanly resolved in a
+    prior run. Pass this on incremental reconcile passes so previously
+    matched payments are never reconsidered or duplicated. Full/first-time
+    runs can omit it (defaults to an empty set, same as before).
+    """
     matches = []
     exceptions = []
-    
-    matched_payment_ids = set()
-    
+ 
+    matched_payment_ids = set(already_matched_payment_ids or [])
+ 
     bank_by_utr = {}
     for b in bank_rows:
         bank_by_utr.setdefault(b["utr_norm"], []).append(b)
-        
+ 
     gateway_by_utr = {}
     for g in gateway_rows:
         gateway_by_utr.setdefault(g["utr_norm"], []).append(g)
-        
-    #======= Extracting exact matches ======#    
-    
+ 
     step_exact_match(gateway_rows, bank_by_utr, matched_payment_ids, matches)
-
-    #============ Lump-sum unbundling =======#
-    
     step_lump_sum_unbundling(gateway_by_utr, bank_by_utr, matched_payment_ids, matches, exceptions)
-
-    #============ Fuzzy Match ===========#
-    
     step_fuzzy_match(gateway_rows, bank_by_utr, matched_payment_ids, matches)
-    
-    #============ Deterministic Formula check (2% fee + 18% GST) =======#
-    
     step_fee_aware_check(gateway_rows, bank_by_utr, matched_payment_ids, matches)
-    
-    #============= Garbled / Trucated UTR ============#
     step_near_miss_utr(gateway_rows, bank_rows, matched_payment_ids, matches)
-    
-    #=============== Exception Tagging ==============#
-    
     step_log_remaining_as_exceptions(gateway_rows, bank_by_utr, matched_payment_ids, exceptions)
-            
+ 
     return matches, exceptions
+ 

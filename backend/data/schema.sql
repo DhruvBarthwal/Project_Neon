@@ -95,4 +95,5 @@ CREATE INDEX idx_gateway_period ON gateway_records(period);
 CREATE INDEX idx_bank_period ON bank_records(period);
 CREATE INDEX idx_ledger_period ON ledger_matches(period);
 CREATE INDEX idx_exceptions_period ON exceptions(period);
+CREATE INDEX idx_exceptions_period_payment ON exceptions(period, payment_id);
 CREATE INDEX idx_runs_period ON reconciliation_runs(period);

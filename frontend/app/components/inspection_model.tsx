@@ -105,7 +105,7 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
                 {isException ? "Exception Root-Cause Audit" : "Reconciled Transaction Audit"}
               </span>
               {isLumpSum && (
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border bg-purple-50 text-purple-700 border-purple-200">
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md text-gray-700">
                   Bulk Payment Batch Member
                 </span>
               )}
@@ -228,7 +228,7 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
                       <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wide">
                         2. Gateway Ledger
                       </span>
-                      <span className=" text-blue-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                      <span className=" text-blue-900 px-1.5 py-0.5 rounded text-[9px] font-semibold">
                         Processor / Ingest
                       </span>
                     </div>
@@ -278,7 +278,7 @@ const InspectionModal = ({ paymentId, period, onClose }: Props) => {
                       <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wide">
                         3. Bank Settlement
                       </span>
-                      <span className=" text-purple-700 px-1.5 py-0.5 rounded text-[9px] font-semibold">
+                      <span className=" text-purple-900 px-1.5 py-0.5 rounded text-[9px] font-semibold">
                         Vault / Payout
                       </span>
                     </div>

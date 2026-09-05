@@ -214,10 +214,26 @@ const QAPanel = ({ period: defaultPeriod, periods = [], onNavigate }: Props) => 
         )}
 
         {loading && (
-          <div className="flex gap-2 items-center text-slate-500 text-sm py-2 animate-pulse">
-            <span className="w-2 h-2 rounded-full bg-gray-500 animate-bounce [animation-delay:-0.3s]" />
-            <span className="w-2 h-2 rounded-full bg-gray-500 animate-bounce [animation-delay:-0.15s]" />
-            <span className="w-2 h-2 rounded-full bg-gray-500 animate-bounce" />
+          <div className="flex gap-2 items-center text-slate-500 text-sm py-2">
+            <span className="text-slate-500 text-lg animate-pulse">Thinking</span>
+            <span
+              className="w-2 h-2 rounded-full bg-gray-400"
+              style={{ animation: "qa-fade 1.4s ease-in-out infinite", animationDelay: "0s" }}
+            />
+            <span
+              className="w-2 h-2 rounded-full bg-gray-400"
+              style={{ animation: "qa-fade 1.4s ease-in-out infinite", animationDelay: "0.2s" }}
+            />
+            <span
+              className="w-2 h-2 rounded-full bg-gray-400"
+              style={{ animation: "qa-fade 1.4s ease-in-out infinite", animationDelay: "0.4s" }}
+            />
+            <style>{`
+              @keyframes qa-fade {
+                0%, 80%, 100% { opacity: 0.2; }
+                40% { opacity: 1; }
+              }
+            `}</style>
           </div>
         )}
 
@@ -226,8 +242,8 @@ const QAPanel = ({ period: defaultPeriod, periods = [], onNavigate }: Props) => 
 
       {/* Floating Centered Input Bar */}
       <div className="w-full max-w-3xl px-4 pb-5 pt-2 flex-shrink-0">
-        <div className="bg-white border border-slate-200 rounded-3xl shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all flex items-center px-4 py-2 gap-2">
-          <input
+        <div className="bg-white border border-slate-200 rounded-3xl shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all flex items-end px-4 py-2.5 gap-2">
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -237,14 +253,23 @@ const QAPanel = ({ period: defaultPeriod, periods = [], onNavigate }: Props) => 
               }
             }}
             placeholder={`Ask anything about ${currentPeriod} records...`}
-            className="flex-1 bg-transparent border-none text-sm text-slate-800 placeholder-slate-400 focus:outline-none"
+            rows={1}
+            className="flex-1 bg-transparent border-none text-sm text-slate-800 placeholder-slate-400 focus:outline-none resize-none max-h-40 overflow-y-auto leading-relaxed py-1"
+            style={{
+              height: "auto",
+            }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+            }}
           />
 
           <button
             onClick={handleSend}
             disabled={!input.trim() || loading}
             aria-label="Send query"
-            className="w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:bg-slate-100 disabled:text-slate-300 text-white flex items-center justify-center transition cursor-pointer"
+            className="w-8 h-8 rounded-full bg-slate-900 hover:bg-slate-800 active:scale-95 disabled:bg-slate-100 disabled:text-slate-300 text-white flex items-center justify-center transition cursor-pointer flex-shrink-0"
           >
             <svg className="w-4 h-4 translate-x-[0.5px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14m-7-7l7 7-7 7" />

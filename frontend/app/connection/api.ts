@@ -73,20 +73,21 @@ export async function askQuestion(
   return data.response as string
 }
 
-export async function fetchAllTables(period: string): Promise<AllTableRecords> {
-  const res = await fetch(`http://localhost:8000/api/reconciliation/tables?period=${encodeURIComponent(period)}`)
+export async function fetchAllTables(period: string) {
+  // Use authedFetch so the JWT Bearer token is attached
+  const res = await authedFetch(`${API_BASE}/api/reconciliation/tables?period=${period}`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch tables for period ${period}`)
+    throw new Error(`Failed to fetch tables for period ${period}: ${res.statusText}`);
   }
-  return res.json()
+  return res.json();
 }
 
 export async function fetchTransactionInspection(
   paymentId: string,
   period: string
 ): Promise<TransactionInspectionDetails> {
-  const res = await fetch(
-    `http://localhost:8000/api/reconciliation/transaction/${encodeURIComponent(paymentId)}?period=${encodeURIComponent(period)}`
+  const res = await authedFetch(
+    `${API_BASE}/api/reconciliation/transaction/${encodeURIComponent(paymentId)}?period=${encodeURIComponent(period)}`
   )
   if (!res.ok) {
     throw new Error(`Failed to fetch inspection details for ${paymentId}`)
@@ -94,8 +95,8 @@ export async function fetchTransactionInspection(
   return res.json()
 }
 
-export async function fetchRiskTrends(): Promise<MonthlyRiskPoint[]> {
-  const res = await fetch("http://localhost:8000/api/reconciliation/trends")
+export async function fetchRiskTrends(): Promise<any> {  // replace `any` with your real trend type
+  const res = await authedFetch(`${API_BASE}/api/reconciliation/trends`)
   if (!res.ok) throw new Error("Failed to fetch risk trends")
   return res.json()
 }

@@ -149,27 +149,26 @@ def gen_lump_sum_group(start_i: int, period: str, base_date: datetime, n_members
 
 def insert_rows(conn, gateway_rows, bank_rows):
     with conn.cursor() as cur:
-        for g in gateway_rows:
-            cur.execute(
-                """INSERT INTO gateway_records
-                   (payment_id, order_id, amount, status, utr, created_at,
-                    period, scenario, expected_result)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                (g["payment_id"], g["order_id"], g["amount"], g["status"], g["utr"],
-                 g["created_at"], g["period"], g["scenario"], g["expected_result"]),
-            )
-        for b in bank_rows:
-            if b is None:
-                continue
-            utr, amount, credited_at, narration, linked = b
-            cur.execute(
-                """INSERT INTO bank_records
-                   (utr, amount, credited_at, narration, period, linked_payment_ids)
-                   VALUES (%s,%s,%s,%s,%s,%s)""",
-                (utr, amount, credited_at, narration, g_period_for(bank_rows, b), linked),
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO gateway_records
+               (payment_id, order_id, amount, status, utr, created_at, period, scenario, expected_result)
+               VALUES %s""",
+            [(g["payment_id"], g["order_id"], g["amount"], g["status"], g["utr"],
+              g["created_at"], g["period"], g["scenario"], g["expected_result"]) for g in gateway_rows],
+        )
+        bank_values = [
+            (b[0], b[1], b[2], b[3], g_period_for(bank_rows, b), b[4])
+            for b in bank_rows if b is not None
+        ]
+        if bank_values:
+            psycopg2.extras.execute_values(
+                cur,
+                """INSERT INTO bank_records (utr, amount, credited_at, narration, period, linked_payment_ids)
+                   VALUES %s""",
+                bank_values,
             )
     conn.commit()
-
 
 def g_period_for(bank_rows, b):
     # small helper since bank rows don't carry period directly above
@@ -226,28 +225,44 @@ def generate_baseline(conn, total_rows: int, period: str):
 
     print(f"[{period}] Inserted {len(gateway_rows)} Gateway | {len([b for b in bank_rows if b])} Bank | {len(merchant_rows)} Merchant rows")
 
-def trickle(conn, period: str, interval: int):
+def trickle_once(conn, period: str) -> int:
+    """One insert tick: adds 1-2 new gateway/bank/merchant rows for `period`.
+    Returns how many gateway rows were inserted. Shared by the CLI --trickle
+    mode and the async scheduler so the logic only lives in one place.
+    """
+    global CURRENT_PERIOD
+    CURRENT_PERIOD = period
     base_date = datetime.now()
-    i = 100000
+    n = random.choice([1, 1, 2])
+ 
+    gateway_rows, bank_rows = [], []
+    # NOTE: `i` needs to stay unique across calls to avoid payment_id collisions.
+    # Simplest fix: derive it from a DB count instead of an in-memory counter,
+    # since scheduler ticks don't share process state with the CLI trickle loop.
+    with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM gateway_records WHERE period = %s", (period,))
+        i = cur.fetchone()[0] + 1
+ 
+    for _ in range(n):
+        gw, bank = gen_row(i, period, base_date)
+        gateway_rows.append(gw)
+        bank_rows.append(bank)
+        i += 1
+ 
+    insert_rows(conn, gateway_rows, bank_rows)
+    merchant_rows = generate_merchant_records(gateway_rows, period)
+    insert_merchant_rows(conn, merchant_rows)
+ 
+    return len(gateway_rows)
+ 
+ 
+def trickle(conn, period: str, interval: int):
+    """CLI standalone mode — kept for manual use, now just calls trickle_once()."""
     print(f"Trickling new rows into {period} every {interval}s — Ctrl+C to stop")
     while True:
         time.sleep(interval)
-        n = random.choice([1, 1, 2])
-        gateway_rows, bank_rows = [], []
-        for _ in range(n):
-            gw, bank = gen_row(i, period, base_date)
-            gateway_rows.append(gw)
-            bank_rows.append(bank)
-            i += 1
-        global CURRENT_PERIOD
-        CURRENT_PERIOD = period
-        insert_rows(conn, gateway_rows, bank_rows)
-        merchant_rows = generate_merchant_records(gateway_rows, period)
-        insert_merchant_rows(conn, merchant_rows)
- 
-        print(f"Inserted {len(gateway_rows)} gateway rows / {len([b for b in bank_rows if b])} bank rows "
-            f"/ {len(merchant_rows)} merchant rows for {period}")
-        print(f"[{datetime.now().isoformat(timespec='seconds')}] +{n} row(s) added to {period}")
+        n_inserted = trickle_once(conn, period)
+        print(f"[{datetime.now().isoformat(timespec='seconds')}] +{n_inserted} row(s) added to {period}")
 
 
 def seed_multiple_periods(conn, periods: list[str], rows_per_period: int):
@@ -260,7 +275,7 @@ def seed_multiple_periods(conn, periods: list[str], rows_per_period: int):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--baseline", type=int, default=100, help="number of rows per period")
+    ap.add_argument("--baseline", type=int, default=300, help="number of rows per period")
     ap.add_argument("--period", type=str, default="2026-05", help="single period e.g. 2026-05")
     ap.add_argument(
         "--seed-all",

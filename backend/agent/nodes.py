@@ -68,8 +68,8 @@ def ensure_reconciled_node(state: AgentState) -> dict:
         )
 
         write_results(
-            conn, period, matches, exceptions, triggered_by="audit_agent", trigger_source="auto_agent"
-        )
+            conn, period, matches, exceptions, triggered_by=state.get("actor"), trigger_source="auto_agent"
+        )   
         return {"auto_run_notice": f"(Reconciliation cycle was pending for {period} — executed automatically.)\n\n"}
     finally:
         conn.close()
@@ -82,18 +82,30 @@ def no_data_response_node(state: AgentState) -> dict:
 
 def classify_intent_node(state: AgentState) -> dict:
     parsed = classify(state["messages"])
-    print(">>> CLASSIFY DEBUG:", parsed)
-    update = {
-        "intent": parsed.get("intent", "not_found"),
+    intents = parsed.get("intents") or [parsed.get("intent", "lookup_record")]
+
+    # Prefer the period the user actually asked about in this message.
+    # Fall back to the dashboard's currently selected period only if the
+    # classifier found no time reference at all.
+    resolved_period = parsed.get("period") or state["period"]
+
+    target_tables = parsed.get("target_tables") or []
+    if not target_tables and parsed.get("target_table"):
+        target_tables = [parsed["target_table"]]
+    if not target_tables:
+        target_tables = ["exceptions"]
+
+    return {
+        "intents": intents,
+        "period": resolved_period,
         "payment_ids": parsed.get("payment_ids") or [],
         "utrs": parsed.get("utrs") or [],
         "min_amount": parsed.get("min_amount"),
         "compare_period": parsed.get("compare_period"),
-        "target_table": parsed.get("target_table") or "exceptions",
+        "target_table": target_tables[0],   # kept for any code still reading the singular field
+        "target_tables": target_tables,
+        "sub_answers": [],  # Reset collector
     }
-    if parsed.get("period"):
-        update["period"] = parsed["period"]
-    return update
 
 
 # ---------- Record Audit with Idempotency & Retry Normalization ----------
@@ -218,7 +230,7 @@ def lookup_record_node(state: AgentState) -> dict:
             target_identifier=r.get("identifier") or "UNKNOWN",
             outcome_status=outcome,
             exposure_amount=risk_amt,
-            actor="analyst_copilot",
+            actor=state.get("actor"),
             metadata={
                 "gateway_status": gw.get("status") if gw else None,
                 "merchant_status": merch.get("status") if merch else None,
@@ -227,9 +239,9 @@ def lookup_record_node(state: AgentState) -> dict:
             },
         )
 
-    prompt = multi_record_audit_prompt(records)
-    answer = chat(prompt, max_tokens=3500)
-    return {"answer": answer, "messages": [AIMessage(content=answer)]}
+    finding = chat(multi_record_audit_prompt(records), max_tokens=2048)
+    return {"sub_answers": [f"### Transaction Audit\n{finding}"]}
+
 
 def match_status_node(state: AgentState) -> dict:
     return lookup_record_node(state)
@@ -254,26 +266,14 @@ def metric_query_node(state: AgentState) -> dict:
         metadata={"match_rate": stats.get("match_rate"), "exceptions": stats.get("exceptions")},
     )
 
-    prompt = metric_query_prompt(period, stats, user_query)
-    answer = chat(prompt, max_tokens=1024)
-    return {"answer": answer, "messages": [AIMessage(content=answer)]}
+    finding = chat(metric_query_prompt(period, stats, user_query), max_tokens=1024)
+    return {"sub_answers": [f"### Cycle Metrics & Risk\n{finding}"]}
 
 # ---------- Table Navigation (Deep Link Injection) ----------
 
 def table_navigation_node(state: AgentState) -> dict:
     period = state["period"]
-    table = state.get("target_table") or "exceptions"
-
-    record_business_audit(
-        period=period,
-        event_type="WORKSPACE_NAVIGATION",
-        intent="table_navigation",
-        target_identifier=f"Table: {table}",
-        outcome_status="NAVIGATED",
-        exposure_amount=0.00,
-        actor="analyst_copilot",
-        metadata={"target_table": table},
-    )
+    tables = state.get("target_tables") or [state.get("target_table") or "exceptions"]
 
     table_labels = {
         "exceptions": "Exceptions Queue",
@@ -282,15 +282,30 @@ def table_navigation_node(state: AgentState) -> dict:
         "bank": "Bank Settlements",
         "merchant": "Merchant Orders",
     }
-    label = table_labels.get(table, "Ledger Table")
 
-    answer = (
-        f"Displaying the full dataset inline for **{period}** would flood the audit log. "
-        f"You can explore all filtered entries directly in the ledger workspace:\n\n"
-        f"[Open {label} ({period}) →](#view_tables?period={period}&table={table})\n\n"
-        f"*Use the in-table search and period selector to inspect specific records.*"
-    )
-    return {"answer": answer, "messages": [AIMessage(content=answer)]}
+    links = []
+    for table in tables:
+        label = table_labels.get(table, table.replace("_", " ").title())
+        links.append(f"[Open {label} ({period}) →](#view_tables?period={period}&table={table})")
+
+        record_business_audit(
+            period=period,
+            event_type="WORKSPACE_NAVIGATION",
+            intent="table_navigation",
+            target_identifier=f"Table: {table}",
+            outcome_status="NAVIGATED",
+            exposure_amount=0.00,
+            actor=state.get("actor"),
+            metadata={"target_table": table},
+        )
+
+    if len(links) == 1:
+        body = links[0]
+    else:
+        body = "\n".join(f"- {link}" for link in links)
+
+    answer = f"{body}\n\n*Use the in-table search and period selector to inspect specific records.*"
+    return {"sub_answers": [f"### Data Grid Link{'s' if len(links) > 1 else ''}\n{answer}"]}
 
 # ---------- Batch / Lump-Sum Unbundling Audit ----------
 
@@ -356,7 +371,7 @@ def reconcile_cycle_node(state: AgentState) -> dict:
         )
 
         write_results(
-            conn, period, matches, exceptions, triggered_by="manual_agent", trigger_source="user_prompt"
+            conn, period, matches, exceptions, triggered_by=state.get("actor"), trigger_source="user_prompt"
         )
         ans = (
             f"Successfully completed 3-way reconciliation cycle for **{period}**.\n\n"
@@ -539,6 +554,28 @@ def grouped_reasons_node(state: AgentState) -> dict:
 
     return {"answer": answer, "messages": [AIMessage(content=answer)]}
 
+def top_exception_analysis_node(state: AgentState) -> dict:
+    period = state["period"]
+    conn = get_connection()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT * FROM exceptions WHERE period = %s
+                   AND reason_code IN ('no_corresponding_bank_record', 'amount_or_date_mismatch_unresolved')
+                   ORDER BY amount DESC NULLS LAST LIMIT 1""",
+                (period,),
+            )
+            top = cur.fetchone()
+    finally:
+        conn.close()
+
+    if not top:
+        ans = f"No gateway-bank mismatch exceptions found for `{period}`."
+        return {"sub_answers": [ans]}
+
+    records = _fetch_records_bundle([top["payment_id"]], period)
+    finding = chat(multi_record_audit_prompt(records), max_tokens=2048)
+    return {"sub_answers": [f"### Highest-Exposure Mismatch\n{finding}"]}
 
 def not_found_node(state: AgentState) -> dict:
     answer = (
@@ -550,3 +587,22 @@ def not_found_node(state: AgentState) -> dict:
         "- **Access Ledger Tables**: `Show me the exceptions table for May`"
     )
     return {"answer": answer, "messages": [AIMessage(content=answer)]}
+
+# In agent/nodes.py
+
+def synthesize_plan_node(state: AgentState) -> dict:
+    findings = state.get("sub_answers") or []
+    if not findings:
+        ans = "I could not retrieve records matching your inquiry."
+        return {"answer": ans, "messages": [AIMessage(content=ans)]}
+    
+    # If only one intent ran, return it directly
+    if len(findings) == 1:
+        ans = findings[0]
+    else:
+        # Multi-intent unified report
+        ans = "\n\n---\n\n".join(findings)
+        
+    notice = state.get("auto_run_notice") or ""
+    final_output = f"{notice}{ans}"
+    return {"answer": final_output, "messages": [AIMessage(content=final_output)]}

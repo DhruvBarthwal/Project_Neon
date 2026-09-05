@@ -45,20 +45,23 @@ def classify(messages: list) -> dict:
             break
 
     if not user_query:
-        return {"intent": "not_found", "payment_ids": [], "utrs": []}
+        return {"intents": ["not_found"], "payment_ids": [], "utrs": [], "target_tables": []}
 
     prompt = f"""{SYSTEM_PROMPT}
 
 Respond ONLY with a valid JSON object matching this structure:
 {{
-  "intent": "lookup_record" | "metric_query" | "match_status" | "summary" | "compare_months" | "filtered_list" | "grouped_reasons" | "table_navigation" | "batch_unbundling_audit" | "reconcile_cycle" | "not_found",
+  "intents": ["lookup_record", "metric_query", "match_status", "summary", "compare_months", "filtered_list", "grouped_reasons", "table_navigation", "batch_unbundling_audit", "reconcile_cycle", "top_exception_analysis", "not_found"],
   "period": "YYYY-MM" or null,
   "compare_period": "YYYY-MM" or null,
-  "target_table": "exceptions" | "ledger_matches" | "gateway" | "bank" | "merchant" or null,
+  "target_tables": ["exceptions", "ledger_matches", "gateway", "bank", "merchant"],
   "payment_ids": ["pay_..."],
   "utrs": ["UTR..."],
   "min_amount": number or null
 }}
+
+Remember: "intents" and "target_tables" are always arrays, even for a single value.
+The "period" must reflect what the user explicitly asked about in THIS message — do not omit it if they named a month/year.
 
 User Query: "{user_query}"
 """
@@ -66,15 +69,22 @@ User Query: "{user_query}"
     try:
         response = classifier_llm.invoke([HumanMessage(content=prompt)])
         parsed = json.loads(response.content)
-        
+
         # Ensure fallback lists exist
         if "payment_ids" not in parsed or not isinstance(parsed["payment_ids"], list):
             parsed["payment_ids"] = []
         if "utrs" not in parsed or not isinstance(parsed["utrs"], list):
             parsed["utrs"] = []
+        if "target_tables" not in parsed or not isinstance(parsed["target_tables"], list):
+            # Back-compat: older single "target_table" key, or nothing at all
+            single = parsed.get("target_table")
+            parsed["target_tables"] = [single] if single else []
+        if "intents" not in parsed or not isinstance(parsed["intents"], list):
+            single_intent = parsed.get("intent")
+            parsed["intents"] = [single_intent] if single_intent else ["not_found"]
 
         return parsed
 
     except Exception as e:
         print(">>> GROQ CLASSIFY ERROR:", repr(e))
-        return {"intent": "not_found", "payment_ids": [], "utrs": []}
+        return {"intents": ["not_found"], "payment_ids": [], "utrs": [], "target_tables": []}

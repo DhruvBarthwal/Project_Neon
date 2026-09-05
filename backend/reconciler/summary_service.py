@@ -1,5 +1,6 @@
 from datetime import datetime
 from reconciler.main import get_connection
+import re
 
 REASON_LABELS = {
     "no_corresponding_bank_record": "No corresponding bank record",
@@ -179,6 +180,10 @@ def _build_exceptions(exception_rows):
     ]
 
 
+def _lump_sum_group_key(payment_id: str) -> str | None:
+    m = re.search(r"_ls(\d+)_", payment_id)
+    return m.group(1) if m else None
+
 def _build_lump_sum_highlights(lump_sum_rows, exceptions):
     groups: dict[str, dict] = {}
     for explanation, bank_amount, payment_id, matched_amount in lump_sum_rows:
@@ -189,18 +194,19 @@ def _build_lump_sum_highlights(lump_sum_rows, exceptions):
             "memberPaymentIds": [],
             "memberAmounts": [],
             "heldBackPaymentIds": [],
+            "_group_key": _lump_sum_group_key(payment_id),
         })
         g["memberPaymentIds"].append(payment_id)
         g["memberAmounts"].append(float(matched_amount))
 
-    # Match held back records to their respective lump-sum group if possible
     held_back_exceptions = [e for e in exceptions if e["reasonCode"] == "held_back_from_lump_sum"]
     for g in groups.values():
-        utr = g["utr"]
+        group_key = g["_group_key"]
         g["heldBackPaymentIds"] = [
-            e["paymentId"] for e in held_back_exceptions 
-            if utr and utr in e["paymentId"]
-        ] or [e["paymentId"] for e in held_back_exceptions]
+            e["paymentId"] for e in held_back_exceptions
+            if group_key and _lump_sum_group_key(e["paymentId"]) == group_key
+        ]
+        del g["_group_key"]  # internal only, don't leak to the API response
 
     return list(groups.values())
 

@@ -14,11 +14,9 @@ from pydantic import BaseModel
 from nemoguardrails import LLMRails, RailsConfig
 from nemoguardrails.rails.llm.options import GenerationOptions
 from dotenv import load_dotenv
-from langgraph.types import Command
 from datetime import datetime
 from typing import Optional
-
-from agent.graph import graph
+from contextlib import asynccontextmanager
 
 from reconciler.main import get_connection, fetch_period, write_results
 from reconciler.matcher import run_matching
@@ -27,10 +25,18 @@ from agent.graph import ask as qa_ask
 from security.security import issue_agent_identity, get_current_agent
 from reconciler.merchant_crosscheck import cross_check_merchant
 from reconciler.main import fetch_merchant_records
+from data.scheduler import start_background_tasks
 
 #========= CONNECTION ==========#
 
-app = FastAPI(title="Reconciliation Engine")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_background_tasks()
+    yield
+    # (nothing to clean up on shutdown for now — asyncio tasks are
+    # daemon-like and end when the process exits)
+ 
+app = FastAPI(title="Reconciliation Engine", lifespan=lifespan)
 
 load_dotenv()
 
@@ -95,45 +101,31 @@ def get_token(req: TokenRequest):
 
 
 @app.post("/intent")
-async def getIntent(data : TextRequest):
+async def getIntent(data: TextRequest, agent: dict = Depends(get_current_agent)):
+    messages = [{"role": "user", "content": data.text}]
 
-    messages = [{
-        "role" : "user",
-        "content" : data.text
-    }]
-    
-    t0 = time.time()
-    
     # options = GenerationOptions(output_vars=True)
-    # response = await rails.generate_async(messages=messages,options=options)
-   
-    # t1 = time.time()
-    
-    # print("DEBUG:", response.output_data)
-    
-    # output_data = response.output_data or {}
+    # guard_response = await rails.generate_async(messages=messages, options=options)
+
+    # output_data = guard_response.output_data or {}
     # blocked = (
     #     output_data.get("triggered_input_rail") is not None
     #     or output_data.get("triggered_output_rail") is not None
     # )
-       
     # if blocked:
     #     return {
-    #             "is_safe": False,
-    #             "message" : response.response
-    #         }
+    #         "is_safe": False,
+    #         "status": "blocked",
+    #         "response": "This request couldn't be processed — it was flagged by the safety filter. Please rephrase or contact support if this seems wrong.",
+    #     }
 
-    # ---- Q&A graph (Track 04) replaces the old graph.ainvoke logic below ----
-    # thread_id = convo_id, same pattern as before, keeps memory across turns
-    # for this conversation.
-    
-    answer = qa_ask(data.text, data.period, thread_id=data.convo_id)
-
+    answer = qa_ask(data.text, data.period, thread_id=data.convo_id, actor=agent["sub"])
     return {"is_safe": True, "status": "done", "response": answer}
-
+   
+   
     
 @app.get("/api/reconciliation/periods")
-def get_periods():
+def get_periods(agent: dict = Depends(get_current_agent)):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
@@ -165,7 +157,7 @@ def get_periods():
         
 
 @app.get("/api/reconciliation/summary")
-def get_summary(period: str):
+def get_summary(period: str, agent: dict = Depends(get_current_agent)):
     conn = get_connection()
     try:
         summary = summary_service.build_summary(conn, period)
@@ -183,7 +175,7 @@ def get_audit_log(period: str | None = None, agent : dict = Depends(get_current_
 
 
 @app.get("/api/reconciliation/trends")
-def get_risk_trends():
+def get_risk_trends(agent: dict = Depends(get_current_agent)):
     conn = get_connection()
     try:
         return summary_service.get_monthly_risk_trends(conn)
@@ -231,7 +223,7 @@ def run_reconciliation(req: RunReconciliationRequest, agent: dict = Depends(get_
 
 
 @app.get("/api/reconciliation/tables")
-def get_reconciliation_tables(period: str):
+def get_reconciliation_tables(period: str, agent: dict = Depends(get_current_agent)):
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -291,7 +283,7 @@ def get_reconciliation_tables(period: str):
         conn.close()
         
 @app.get("/api/reconciliation/transaction/{payment_id}")
-def get_transaction_details(payment_id: str, period: str):
+def get_transaction_details(payment_id: str, period: str, agent: dict = Depends(get_current_agent)):
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -369,7 +361,7 @@ def get_transaction_details(payment_id: str, period: str):
         conn.close()
         
 @app.get("/api/audit-trail")
-def get_audit_trail(period: Optional[str] = None):
+def get_audit_trail(period: Optional[str] = None, agent: dict = Depends(get_current_agent)):
     conn = get_connection()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -399,3 +391,5 @@ def get_audit_trail(period: Optional[str] = None):
             return {"records": rows}
     finally:
         conn.close()
+        
+        

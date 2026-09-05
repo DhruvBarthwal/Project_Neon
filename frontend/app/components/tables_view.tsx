@@ -88,9 +88,8 @@ const TablesView = ({
   onBack,
 }: Props) => {
   const [selectedPeriod, setSelectedPeriod] = useState<string>(period);
-  const [currentSummary, setCurrentSummary] = useState<ReconciliationSummary | null>(
-    initialSummary,
-  );
+  const [currentSummary, setCurrentSummary] =
+    useState<ReconciliationSummary | null>(initialSummary);
   const [selectedTable, setSelectedTable] = useState<TableType>(initialTable);
   const [searchQuery, setSearchQuery] = useState("");
   const [tableData, setTableData] = useState<AllTableRecords | null>(null);
@@ -116,18 +115,16 @@ const TablesView = ({
 
   useEffect(() => {
     setLoading(true);
-    fetchAllTables(selectedPeriod)
-      .then(setTableData)
-      .catch((err) => console.error("Error fetching tables:", err))
-      .finally(() => setLoading(false));
 
-    // Keep exceptions data aligned when period changes within tables view
-    if (selectedPeriod !== period) {
-      fetchSummary(selectedPeriod)
-        .then(setCurrentSummary)
-        .catch(() => setCurrentSummary(null));
-    }
-  }, [selectedPeriod, period]);
+    // Fetch both all tables and summary simultaneously
+    Promise.all([
+      fetchAllTables(selectedPeriod).then(setTableData),
+      // Fetch summary if not present or period changed
+      fetchSummary(selectedPeriod).then(setCurrentSummary),
+    ])
+      .catch((err) => console.error("Error fetching table records:", err))
+      .finally(() => setLoading(false));
+  }, [selectedPeriod]);
 
   const handlePeriodChange = (newPeriod: string) => {
     setSelectedPeriod(newPeriod);

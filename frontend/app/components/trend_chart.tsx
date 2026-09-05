@@ -33,7 +33,7 @@ const TrendChart = ({ currentPeriod, onSelectPeriod }: Props) => {
       .then(setTrends)
       .catch((err) => console.error("Error loading risk trends:", err))
       .finally(() => setLoading(false));
-  }, [currentPeriod]);
+  }, []);
 
   if (loading || trends.length === 0) {
     return (

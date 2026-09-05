@@ -16,3 +16,5 @@ langchain-groq
 
 psycopg2-binary
 logfire[fastapi]
+
+ortools

@@ -1,14 +1,14 @@
 models:
   - type: main
     engine: nim
-    model: meta/llama-3.1-8b-instruct
+    model: openai/gpt-oss-20b
     parameters:
       base_url: "https://integrate.api.nvidia.com/v1"
       timeout: 90
 
   - type: generate_user_intent
     engine: nim
-    model: meta/llama-3.1-8b-instruct
+    model: openai/gpt-oss-20b
 
   - type: content_safety
     engine: nim
@@ -21,7 +21,6 @@ rails:
   input:
     flows:
       - content safety check input $model=content_safety
-      - self check input
   output:
     flows:
       - content safety check output $model=content_safety

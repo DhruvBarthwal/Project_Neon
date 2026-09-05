@@ -1,5 +1,6 @@
 import random
 from datetime import timedelta
+import psycopg2.extras
 
 from reconciler.main import get_connection, fetch_period
 
@@ -78,15 +79,17 @@ def generate_merchant_records(gateway_rows, period):
 
 
 def insert_merchant_rows(conn, merchant_rows):
+    if not merchant_rows:
+        return
     with conn.cursor() as cur:
-        for m in merchant_rows:
-            cur.execute(
-                """INSERT INTO merchant_records
-                   (order_id, payment_id, amount, status, marked_paid_at, period, scenario)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (m["order_id"], m["payment_id"], m["amount"], m["status"],
-                 m["marked_paid_at"], m["period"], m["scenario"]),
-            )
+        psycopg2.extras.execute_values(
+            cur,
+            """INSERT INTO merchant_records
+               (order_id, payment_id, amount, status, marked_paid_at, period, scenario)
+               VALUES %s""",
+            [(m["order_id"], m["payment_id"], m["amount"], m["status"],
+              m["marked_paid_at"], m["period"], m["scenario"]) for m in merchant_rows],
+        )
     conn.commit()
 
 

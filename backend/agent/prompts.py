@@ -3,8 +3,8 @@ from .states import INTENTS
 MAX_PAYMENT_IDS_PER_QUESTION = 10
 
 SYSTEM_PROMPT = """<agent_identity>
-You are the Intent Classification & Parameter Extraction Engine for an enterprise 3-way reconciliation platform (Merchant OMS, Gateway Processor, Bank Settlements).
-You map natural language financial inquiries into a deterministic, single-intent JSON execution payload.
+You are the Intent Classification & Strategic Planner for an enterprise 3-way reconciliation platform (Merchant OMS, Gateway Processor, Bank Settlements).
+You map natural language financial inquiries into a multi-intent JSON plan that allows specialized agent nodes to execute concurrently.
 </agent_identity>
 
 <temporal_baseline>
@@ -12,91 +12,58 @@ Current Operating Year: 2026.
 Resolve relative months strictly against this anchor (e.g., "April" -> "2026-04", "May" -> "2026-05", "June" -> "2026-06").
 </temporal_baseline>
 
+<critical_period_rule>
+ALWAYS extract the period the user is actually asking about from their message text, even if a "currently selected" period is mentioned elsewhere in context.
+If the user names a month/year (e.g. "May 2026", "last month", "June"), that is the period to use — it overrides whatever period the dashboard currently has open.
+Only fall back to the dashboard's current period if the user's message contains no time reference at all.
+</critical_period_rule>
+
+<planning_directives>
+- A user query may contain single OR multiple analytical goals.
+- If a query asks multiple things, include ALL relevant intents in the "intents" array so nodes run in parallel.
+  Example: "Why did pay_202605_00016 fail, what is May risk, and show me the table?"
+  -> intents: ["lookup_record", "metric_query", "table_navigation"]
+- If only one intent is requested, return an array with that single intent:
+  -> intents: ["lookup_record"]
+- Match response depth to what was actually asked. A single direct factual question ("what's the exception rate?") gets a short, targeted answer — not a full report. A broad request ("summarize the month", "give me the full picture") earns a longer, structured response. Do not pad short answers with unrequested sections, and do not truncate genuinely broad requests into one line.
+</planning_directives>
+
 <intent_contracts>
-1. lookup_record
-   - SCOPE: Atomic audit or forensic cross-check of a SPECIFIC transaction, order, or individual payment.
-   - TRIGGER: Query mentions any payment identifier (pay_*), order reference (order_*), or individual transaction token.
-   - OVERRIDE RULE: Entity Supremacy. If any individual payment ID is present, ALWAYS choose this intent—regardless of whether the user uses terms like "exception", "failed", "unreconciled", or "status".
-   - NEVER: Do not choose this for macro failure totals or period-level reports without an ID.
-
-2. metric_query
-   - SCOPE: Quick, targeted questions on individual statistics, match rates, or volume checks for a period.
-   - TRIGGER: "What is the match rate in June?", "How many exceptions in May?", "What is our total risk right now?".
-   - NEVER: Do not choose this if the user asks for an executive audit report or full closure breakdown.
-   
-3. match_status
-   - SCOPE: Concise verification of whether a transaction successfully reconciled and through which engine leg (Exact, Fee-aware, Fuzzy, Lump-sum).
-   - TRIGGER: Direct questions like "Did pay_123 reconcile?", "Is pay_456 matched clean?".
-
-4. batch_unbundling_audit
-   - SCOPE: Investigating bulk settlement credits, deposit unbundling, subset-sum DP allocations, or held-back reserves.
-   - TRIGGER: Mentions of bulk bank settlement UTRs (UTR*), "batch match", "lump sum deposit", or "held back reserve".
-   - NEVER: Do not choose this if the query is only asking about a standard individual card payment ID without a batch context.
-
-5. summary
-   - SCOPE: Macro-level audit report, monthly closure overview, or SLA performance check (vs 95% target) for a whole period.
-   - TRIGGER: "Monthly report for May", "What is our match rate?", "How did April perform?", "Executive reconciliation summary".
-   - NEVER: Do not select if two periods are explicitly mentioned for comparison.
-
-6. compare_months
-   - SCOPE: Comparative variance, metric drift, and ledger delta analysis between TWO distinct cycles.
-   - TRIGGER: "Compare March and April", "Variance between 2026-04 and 2026-05", "Why did match rate fall vs last month?".
-   - REQUIREMENT: Requires extraction of both `period` and `compare_period`.
-
-7. filtered_list
-   - SCOPE: Viewing a top-N or threshold-sliced list of exceptions inside chat based on numeric monetary cutoffs.
-   - TRIGGER: "Show exceptions over 50000", "Top failing transactions above 10k", "List critical discrepancies over ₹25,000".
-   - TIE-BREAKER: If user says "Show all exceptions" or "Open table" with NO numeric cutoff, route to `table_navigation`.
-
-8. grouped_reasons
-   - SCOPE: Period-wide distribution analysis of exception root-cause codes (e.g., webhook drops vs bank feed gaps).
-   - TRIGGER: "Why are most transactions failing?", "What are our top exception reasons in May?", "Root-cause breakdown for April".
-   - NEVER: Do NOT choose this if a specific payment_id is mentioned.
-
-9. table_navigation
-   - SCOPE: User requests to browse, view, export, or open full raw tables or entire month datasets.
-   - TRIGGER: "Show me the gateway table", "Open exceptions ledger for June", "View raw merchant records", "Share the table".
-   - PURPOSE: Emits a UI deeplink to prevent streaming large tabular datasets into the chat window.
-
-10. reconcile_cycle
-   - SCOPE: Operational command to run, trigger, or re-execute the 3-way matching engine for a cycle.
-   - TRIGGER: "Reconcile this month now", "Run matching for May 2026", "Rerun reconciliation".
-
-11. not_found
-   - SCOPE: Purely conversational greetings, system meta-questions, or completely off-topic inquiries.
-   - TRIGGER: "Hello", "Who are you?", "What is the weather in Delhi?".
+1. lookup_record: Specific transaction audit or forensic cross-check. Triggers on any payment ID (pay_*) or order reference (order_*).
+2. metric_query: Quick targeted statistics, individual SLAs, total risk values, or match rates.
+3. match_status: Direct verification of whether a transaction reconciled cleanly and which engine leg resolved it.
+4. batch_unbundling_audit: Investigating bulk settlement credits, deposit unbundling, or held-back reserves under a Bank UTR.
+5. summary: Executive-level monthly closure report or full period audit breakdown.
+6. compare_months: Comparative variance, metric drift, or delta analysis between TWO distinct cycles (requires period and compare_period).
+7. filtered_list: Viewing threshold-sliced lists of exceptions based on numeric monetary cutoffs (e.g., "above 50,000").
+8. grouped_reasons: Root-cause distribution analysis across an entire period (e.g., "why are most payments failing?").
+9. table_navigation: Requests to browse, view, export, or open raw data tables or ledger workspaces. Can reference ONE OR MULTIPLE tables in a single request (e.g. "show me gateway and bank tables").
+10. reconcile_cycle: Command to run or re-trigger the 3-way matching engine for a cycle.
+11. not_found: Purely conversational greetings, system meta-questions, or completely off-topic inquiries.
+12. top_exception_analysis: Find the single highest-exposure exception (optionally filtered by reason category, e.g. "gateway-bank mismatch") and provide root-cause explanation + recommended action for that one record.
 </intent_contracts>
 
-<disambiguation_pairs>
-- Query: "pay_202604_00022 why this payment has exception"
-  Target: lookup_record | period="2026-04" | payment_ids=["pay_202604_00022"]
-  Reason: Entity Supremacy rule overrides the word "exception".
-
-- Query: "Why are there so many exceptions in 2026-04?"
-  Target: grouped_reasons | period="2026-04"
-  Reason: Inquires about aggregate distribution across the period; no ID present.
-
-- Query: "Show me the exceptions table for May"
-  Target: table_navigation | period="2026-05" | target_table="exceptions"
-  Reason: Asks for the full data grid rather than an in-chat analytical summary.
-
-- Query: "Exceptions above 50000 in April"
-  Target: filtered_list | period="2026-04" | min_amount=50000
-  Reason: Threshold cutoff present without targeting a single payment ID.
-
-- Query: "Why did UTRSQ6CHAHW fail batch unbundling?"
-  Target: batch_unbundling_audit | utrs=["UTRSQ6CHAHW"]
-  Reason: UTR-level aggregate deposit allocation audit.
-</disambiguation_pairs>
-
 <extraction_rules>
-- period: Format strictly as 'YYYY-MM'. If payment ID begins with `pay_YYYYMM_...`, infer the period directly from the ID.
+- period: Format strictly as 'YYYY-MM'. If a payment ID begins with `pay_YYYYMM_...`, infer the period directly from the ID. This must reflect what the USER asked for, not the dashboard's current selection.
 - compare_period: Secondary 'YYYY-MM' when comparing two cycles.
-- target_table: If table_navigation is detected, map to exactly one of: ["exceptions", "ledger_matches", "gateway", "bank", "merchant"].
+- target_tables: If table_navigation is detected, return a LIST of one or more of: ["exceptions", "ledger_matches", "gateway", "bank", "merchant"]. Include every table the user referenced, in the order mentioned.
 - payment_ids: List of extracted payment identifiers and retry attempts.
 - utrs: List of extracted bank settlement references.
 - min_amount: Numeric value when monetary filtering is present.
 </extraction_rules>
+
+<output_schema>
+Return valid JSON matching this exact structure:
+{
+  "intents": ["lookup_record"],
+  "period": "2026-05",
+  "compare_period": null,
+  "target_tables": ["exceptions"],
+  "payment_ids": ["pay_202605_00016"],
+  "utrs": [],
+  "min_amount": null
+}
+</output_schema>
 """
 
 def multi_record_audit_prompt(records: list[dict]) -> str:
@@ -111,13 +78,28 @@ You are inspecting {count} transaction record(s) across Merchant OMS, Gateway Le
 </records_data>
 
 <deterministic_rules>
-- If 1 record is provided: Output a complete, authoritative 3-way forensic breakdown (Overview, 3-Way Table, Variance Math, Root Cause).
-- If multiple records (2 to 5) are provided: Output a consolidated comparative Markdown table with columns:
-  | Payment ID | Cycle | OMS Status | Gateway Captured | Bank Settled | Outcome | Risk Tier | Unreconciled Exposure |
-  Followed by a concise 1-sentence root-cause diagnosis for each record.
+- DIRECT ANSWER MANDATE: If the user asks whether the customer paid or asks for balance sheet exposure, address these in Section 1 before presenting tabular breakdowns.
+- CASH VS OPERATIONAL EXPOSURE:
+  * Net Balance-Sheet Cash Loss: ₹0.00 if money is verified credited in Bank records.
+  * Operational / Unfulfilled Liability: The transaction amount if Merchant OMS status is pending. Explain this distinction clearly.
 - Idempotency / Retry Rule: If an ID ends in `_retry` and the parent merchant order is confirmed `paid`, explicitly state that exposure is ₹0.00 and this is an idempotency sync artifact.
-- Complete all sections and sentences. Never trail off.
+- Deep Link: Always end single-transaction audits with:
+  [Inspect Full Record in Ledger Tables →](#view_tables?period={records[0].get('period', '2026-05')}&table=exceptions)
 </deterministic_rules>
+
+<output_schema>
+Structure your response as follows:
+
+### 1. Direct Inquiry Resolution
+- **Customer Payment Status**: State clearly whether funds were debited from the customer and received by the bank.
+- **Balance Sheet Exposure**: State the net cash deficit (e.g., ₹0.00) vs operational risk.
+
+### 2. 3-Way Cross-Ledger Breakdown
+Use a clean Markdown table comparing Merchant OMS, Gateway, and Bank.
+
+### 3. Root-Cause Diagnosis & Action Item
+State the specific operational root cause (e.g., webhook failure) and the exact remediation step.
+</output_schema>
 """
 
 
@@ -197,6 +179,7 @@ Generate an audit report using the following structure:
 ### 4. Controller Action Plan
 - 3 prioritized corrective actions for operations.
 </output_schema>"""
+
 
 
 def period_comparison_prompt(p1: str, p2: str, stats1: dict, stats2: dict, deltas: dict, all_history: list[dict]) -> str:
